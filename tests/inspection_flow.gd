@@ -1,0 +1,178 @@
+﻿extends SceneTree
+var game
+var passed := 0
+var failed := 0
+func _initialize() -> void: call_deferred("run")
+func check(value: bool, message: String) -> void:
+	if value:
+		passed += 1
+		print("PASS: ", message)
+	else:
+		failed += 1
+		push_error("FAIL: " + message)
+func fresh() -> void:
+	if is_instance_valid(game): game.free()
+	game = load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	game.set_process(false)
+	game.tutorial.set_process(false)
+	game.hud.set_process(false)
+	game.audio.muted = true
+func alt(held: bool) -> void:
+	var event := InputEventKey.new()
+	event.keycode = KEY_ALT
+	event.pressed = held
+	Input.parse_input_event(event)
+	Input.flush_buffered_events()
+func build_intro() -> void:
+	game.add_resource("copper", 5)
+	game.select_building("drill")
+	game.place_building(Vector2i(20, 22), "drill", 0)
+	game.add_resource("copper", 2)
+	game.select_building("belt")
+	game.place_building(Vector2i(21, 22), "belt", 0)
+	game.place_building(Vector2i(22, 22), "belt", 0)
+	game.add_resource("copper", 10)
+	game.place_building(Vector2i(31, 22), "solar", 0, "red")
+	game.select_tool("abolish")
+	game.cancel_build_selection()
+func run() -> void:
+	fresh()
+	game.add_resource("copper", 5)
+	game.select_building("drill")
+	game.place_building(Vector2i(20, 22), "drill", 0)
+	check(game.tutorial.central_message() == "Right click to deselect", "Insufficient path resources with a selection ask to Deselect")
+	game.cancel_build_selection()
+	check(game.tutorial.central_message() == "Mine some more ore.", "Insufficient path resources without a selection ask to Click to mine")
+	game.remove_building(Vector2i(20, 22))
+	game.select_building("drill")
+	check(game.tutorial.prewave_recovery_needed() and game.tutorial.central_message() == "Right click to deselect", "A missing unaffordable extractor also uses mining recovery")
+	game.cancel_build_selection()
+	check(game.tutorial.central_message() == "Mine some more ore.", "Extractor rebuilding recovers to mining after deselection")
+	game.add_resource("copper", 5)
+	check(not game.tutorial.prewave_recovery_needed(), "Recovery clears once the next required extractor is affordable")
+	game.place_building(Vector2i(20, 22), "drill", 0)
+	game.add_resource("copper", 10)
+	game.select_building("belt")
+	game.place_building(Vector2i(25, 23), "belt", 0)
+	game.select_tool("abolish")
+	game.cancel_build_selection()
+	check(game.tutorial.demolish_completed and game.tutorial.central_message() == "Press X to enter demolish mode", "Misplaced structures keep demolition guidance active even after an earlier exit")
+	game.select_tool("abolish")
+	check(game.tutorial.central_message() == "Press on buildings to demolish them.", "Returning to demolition retains its removal instruction")
+	game.remove_building(Vector2i(25, 23))
+	check(game.tutorial.central_message() == "Presss X to leave demolish mode.", "Removing the last unwanted structure changes the instruction to leave")
+	game.cancel_build_selection()
+	check(game.tutorial.stage == game.tutorial.Stage.BELTS and not game.tutorial.demolition_lesson_active(), "Leaving clean demolition restores the unfinished construction step")
+	# Progressive shortcut list, without a panel.
+	game.hud.refresh()
+	check(game.hud.shortcuts_label.text.contains("Right click") and game.hud.shortcuts_label.text.contains("X") and not game.hud.shortcuts_label.text.contains("Space"), "Only introduced shortcuts appear before combat")
+	check(game.hud.shortcuts_label is Label and game.hud.shortcuts_label.get_parent() == game.hud.root and game.hud.shortcuts_label.get_theme_color("font_color") == Color.WHITE, "Shortcut list is small white text without a background panel")
+	check(game.hud.shortcuts_label.offset_bottom == -80, "Shortcut list sits just above the bottom-right controls")
+	fresh()
+	build_intro()
+	game.remove_building(Vector2i(21, 22), false)
+	game.select_building("belt")
+	check(game.tutorial.extractor_connected_once and game.tutorial.central_message() == "Right click to deselect", "Breaking a previously completed connection still recovers to deselection when funds are empty")
+	game.cancel_build_selection()
+	check(game.tutorial.central_message() == "Mine some more ore.", "Previously connected factories recover to mining without a selected building")
+	game.add_resource("copper", 1)
+	game.place_building(Vector2i(21, 22), "belt", 0)
+	check(game.tutorial.start_controls_available(), "Rebuilding the missing affordable belt restores readiness")
+	# Complete normal onboarding and enter the extended pause lesson.
+	fresh()
+	build_intro()
+	game.launch_wave()
+	game._damage_building(Vector2i(31, 22), 1)
+	game.tutorial.on_wave_completed(1)
+	check(game.tutorial.central_message() == "Press space to pause and build.", "First damage introduces the pause lesson")
+	game.hud.refresh()
+	check(game.hud.shortcuts_label.text.contains("Space") and game.hud.shortcuts_label.text.contains("Z"), "Damage and wave start add their shortcuts to the list")
+	game.toggle_pause()
+	game.toggle_pause()
+	check(game.tutorial.central_message() == "Press space to pause", "Leaving pause before inspection is completed keeps the pause reminder")
+	game.toggle_pause()
+	game.enemies.clear()
+	game.spawn_queue.clear()
+	game.spawn_remaining = 0
+	game._complete_wave()
+	var point: Vector2 = game.cell_center(game.current_core + Vector2i(1, 1))
+	game.scraps.append({"pos": point, "amount": 3, "magnetized": false})
+	check(game.tutorial.central_message() == "Mouse over the scraps to collect." and game.tutorial.scraps_should_glow(), "Scraps glow exactly while the collection instruction is visible")
+	game.collect_scrap(0.1, point)
+	check(not game.tutorial.scraps_should_glow(), "Scrap guidance glow stops after the tutorial salvage is collected")
+	game.add_resource("copper", 20)
+	game.hud.show_tech_tree()
+	check(game.hud.tech_resource_labels.keys() == ["copper", "scrap"], "Tech inventory shows only minerals already discovered in the main GUI")
+	game.hud.tech_buttons.barriers.button.pressed.emit()
+	check(game.researched.has("barriers") and not game.hud.tech_buttons.barriers.button.has_meta("cost_labels"), "Researched technology no longer shows its price")
+	game.inventory.copper = 40
+	game.inventory.scrap = 20
+	game.research("conveyor_speed")
+	game.hud._rebuild_tech_nodes()
+	check(not game.hud.tech_buttons.has("industry") and game.hud.tech_buttons.has("auto_scrap"), "Research prices do not reveal undiscovered materials")
+	game.add_resource("iron", 1)
+	game.hud.refresh()
+	check(game.hud.tech_resource_labels.has("iron") and game.hud.tech_buttons.auto_scrap.button.get_meta("cost_labels").has("copper"), "Discovering a mineral updates both tech inventory and price icons")
+	game.hud.close_modal()
+	await process_frame
+	game.hud.refresh()
+	check(game.tutorial.central_message() == "Hold alt while mousing over something for info." and game.hud.shortcuts_label.text == "Hold alt for info", "Introducing Alt collapses the shortcut list into its reminder")
+	alt(true)
+	game.hud._refresh_shortcuts()
+	check(game.hud.shortcuts_label.text.contains("Alt") and game.hud.shortcuts_label.text.contains("Space"), "Holding Alt restores the introduced shortcut list")
+	alt(false)
+	game.hud._refresh_shortcuts()
+	check(game.hud.shortcuts_label.text == "Hold alt for info", "Releasing Alt hides the shortcut list again")
+	game.toggle_pause()
+	check(game.tutorial.central_message() == "Press space to pause", "Resuming after Alt is introduced still requests pausing")
+	game.tutorial.update_info_hover(3, true, "not-paused")
+	check(game.tutorial.info_hover_time == 0, "Inspection tutorial does not finish while the pause reminder is active")
+	game.toggle_pause()
+	game.tutorial.category_visits = {"Infrastructure": true, "Defence": true}
+	game.tutorial.update_info_hover(0.1, true, "one")
+	game.tutorial.update_info_hover(0.1, true, "two")
+	game.tutorial.update_info_hover(0.1, true, "three")
+	check(game.tutorial.info_finished() and game.tutorial.central_message() == "Press space to unpause", "Completing Alt inspection replaces its instruction with the unpause reminder")
+	game.toggle_pause()
+	check(game.tutorial.pause_exit_completed and game.tutorial.central_message() == "", "Unpausing completes the extended pause lesson")
+	game.toggle_pause()
+	check(game.tutorial.central_message() == "", "The unpause lesson does not repeat on later pauses")
+	# Enemy hover exposes both its stats and the radius used by the renderer.
+	var enemy: Dictionary = game.create_enemy("heavy", game.cell_center(game.current_core + Vector2i(3, 2)), "red")
+	game.enemies.append(enemy)
+	game.hover_cell = Vector2i((enemy.pos / game.TILE).floor())
+	alt(true)
+	game.hud._refresh_tooltip(game.get_canvas_transform() * enemy.pos)
+	check(not game.hud.hovered_enemy.is_empty() and game.hud.hovered_enemy.info_id == enemy.info_id and game.hud.tooltip_body.get_parsed_text().contains("Range:"), "Alt-hover selects the enemy for attack-radius drawing and shows its range stat")
+	alt(false)
+	game.hud._refresh_tooltip()
+	check(game.hud.hovered_enemy.is_empty(), "Enemy range selection clears when Alt is released")
+	game.enemies.clear()
+	game.wave = 5
+	game.paused = false
+	game.tutorial.speed_toggled = false
+	game.hud.refresh()
+	check(game.hud.shortcuts_label.text == "Hold alt for info" and game.tutorial.introduced_shortcuts.has("Q"), "New shortcuts remain tracked even while Alt hides the list")
+	game.cycle_speed()
+	game.wave = 2
+	game.hud.refresh()
+	alt(true)
+	game.hud._refresh_shortcuts()
+	check(game.hud.shortcuts_label.text.contains("Q"), "Previously introduced shortcuts remain listed across later state changes")
+	alt(false)
+	game._complete_wave()
+	var saved: Array = game.saves.snapshot().duplicate(true)
+	game.tutorial.pause_exit_completed = false
+	game.tutorial.introduced_shortcuts.clear()
+	check(game.saves.restore(game.saves.current) and game.saves.snapshot()[1] == saved[1] and game.tutorial.pause_exit_completed and game.tutorial.introduced_shortcuts.size() >= saved[3][29].size(), "Snapshots preserve completed pause guidance and introduced shortcuts")
+	for entry in game.saves.entries:
+		DirAccess.remove_absolute(game.saves.directory.path_join(entry.file))
+		if FileAccess.file_exists(game.saves.preview_path(entry.file)): DirAccess.remove_absolute(game.saves.preview_path(entry.file))
+	game.free()
+	print("INSPECTION AND PAUSE FLOW CHECKS: %d passed, %d failed" % [passed, failed])
+	quit(1 if failed else 0)
+
+
+
+

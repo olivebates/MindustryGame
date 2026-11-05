@@ -1,0 +1,34 @@
+[gd_resource type="TileSet" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/terrain/copper.svg" id="1_edcrj"]
+[ext_resource type="Texture2D" path="res://assets/terrain/iron.svg" id="2_o6we0"]
+[ext_resource type="Texture2D" path="res://assets/terrain/verdite.svg" id="3_qm3m6"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_j1qab"]
+resource_name = "Copper"
+texture = ExtResource("1_edcrj")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+0:0/0/custom_data_0 = "copper"
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_oq6p2"]
+resource_name = "Iron"
+texture = ExtResource("2_o6we0")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+0:0/0/custom_data_0 = "iron"
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_2ki0t"]
+resource_name = "Verdite"
+texture = ExtResource("3_qm3m6")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+0:0/0/custom_data_0 = "verdite"
+
+[resource]
+tile_size = Vector2i(32, 32)
+custom_data_layer_0/name = "resource"
+custom_data_layer_0/type = 4
+sources/0 = SubResource("TileSetAtlasSource_j1qab")
+sources/1 = SubResource("TileSetAtlasSource_oq6p2")
+sources/2 = SubResource("TileSetAtlasSource_2ki0t")

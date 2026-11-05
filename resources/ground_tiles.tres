@@ -1,0 +1,13 @@
+[gd_resource type="TileSet" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/terrain/ground.svg" id="1_a344r"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_ulsyq"]
+resource_name = "Ground"
+texture = ExtResource("1_a344r")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[resource]
+tile_size = Vector2i(32, 32)
+sources/0 = SubResource("TileSetAtlasSource_ulsyq")
