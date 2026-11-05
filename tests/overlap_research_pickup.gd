@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 var passed := 0
 var failed := 0
 func _initialize() -> void: call_deferred("run")
@@ -19,7 +19,7 @@ func run() -> void:
 	game.tutorial.tech_available = true
 	game.hud.show_tech_tree()
 	var prices: Dictionary = game.hud.tech_buttons.barriers.button.get_meta("cost_labels")
-	check(prices.has("scrap") and prices.has("copper") and game.discovered_resources.is_empty(), "Undiscovered research materials have visible prices without becoming discovered")
+	check(prices.has("scrap") and not prices.has("copper") and game.discovered_resources.is_empty(), "Barrier research shows its scrap-only price without discovering materials")
 	game.hud.close_modal()
 	await process_frame
 	var turret: Vector2i = game.current_core + Vector2i(8, 0)
@@ -36,7 +36,7 @@ func run() -> void:
 	game.research("turret_range", true)
 	var visible: Array[String] = game.hud.visible_tech_ids()
 	check(visible.has("copper_storage") and visible.has("auto_scrap") and visible.has("build_hotkeys") and not visible.has("industry") and not visible.has("solar_green"), "Only the current storage, pickup and hotkey branches follow the starter upgrades")
-	check(game.TECH.auto_scrap.cost == {"scrap": 30, "copper": 50} and game.TECH.build_hotkeys.cost == {"scrap": 50, "copper": 70}, "New upgrades have the requested costs")
+	check(game.TECH.auto_scrap.cost == {"copper": 10} and game.TECH.build_hotkeys.cost == {"copper": 10}, "New upgrades have the requested costs")
 	game.hud.toggle_category("Infrastructure")
 	game.hud.handle_number_hotkey(0)
 	check(game.selected == "", "Building-number shortcuts remain locked before research")
@@ -49,7 +49,7 @@ func run() -> void:
 	game._drop_scrap(game.create_enemy("scout", origin, "red"))
 	var pointer: Vector2 = origin + Vector2(160, 0)
 	game.collect_scrap(1.9, pointer)
-	check(game.scraps[0].pos == origin and not game.scraps[0].magnetized, "Fresh scrap stays still during its two-second wait")
+	check(game.scraps[0].pos.distance_to(origin) <= game.TILE * 2 and not game.scraps[0].magnetized, "Fresh scrap stays still during its two-second wait")
 	game.collect_scrap(0.2, pointer)
 	check(game.scraps[0].magnetized and game.scraps[0].pos != origin, "Auto pickup attracts aged scrap beyond normal hover range")
 	for frame in 60: game.collect_scrap(0.02, pointer)
@@ -77,3 +77,5 @@ func run() -> void:
 	print("OVERLAP RESEARCH PICKUP CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
+

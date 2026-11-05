@@ -14,8 +14,8 @@ func configure(game: Node2D, snapshot: Array = []) -> void:
 			var building: Dictionary = {}
 			for i in game.saves.BUILD_FIELDS.size(): building[game.saves.BUILD_FIELDS[i]] = row[i + 1]
 			buildings[row[0]] = building
-	textures = game.textures.duplicate()
-	for id in ["ground", "rock", "copper", "iron", "verdite"]: terrain[id] = load("res://assets/terrain/%s.svg" % id)
+	textures = game.sprite_rasters(64).duplicate()
+	for id in ["ground", "rock", "copper", "iron", "verdite"]: terrain[id] = preload("res://scripts/pixel_art.gd").texture(load("res://assets/terrain/%s.svg" % id), Vector2i(64, 64))
 	for y in range(core.y - 20, core.y + 21):
 		for x in range(core.x - 20, core.x + 21):
 			var cell := Vector2i(x, y)
@@ -43,9 +43,11 @@ func _draw() -> void:
 	for cell in buildings:
 		if not tiles.has(cell): continue
 		var b: Dictionary = buildings[cell]
-		var dimension: float = 44 if b.kind == "core" else (64 if b.kind == "forge" else 32)
-		var center := Vector2(cell * 32) + Vector2.ONE * (32 if b.kind == "forge" else 16)
+		var footprint: int = 1 if b.kind == "core" else preload("res://scripts/content.gd").BUILDINGS[b.kind].size
+		var dimension: float = 44 if b.kind == "core" else 32 * footprint
+		var center := Vector2(cell * 32) + Vector2.ONE * 16 * footprint
 		var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not conveyor_upgraded else textures[b.kind]
+		if b.kind == "solar": texture = textures.solar_base
 		if b.kind == "core" and cell != core: texture = textures.core_inactive
 		var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
 		var flip := Vector2.ONE
@@ -70,7 +72,11 @@ func _draw() -> void:
 		draw_texture_rect(texture, Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false)
 		draw_set_transform(Vector2.ZERO)
 		if b.kind in ["solar", "turret", "repeater", "cannon"]:
-			draw_arc(center, 12, 0, TAU, 24, {"red": Color("f16e64"), "green": Color("83d780"), "blue": Color("7aa7f0")}[b.color], 2)
-			draw_set_transform(center, b.aim)
-			draw_texture_rect(textures.barrel, Rect2(-16, -16, 32, 32), false)
+			draw_rect(Rect2(Vector2(cell * 32) - Vector2.ONE, Vector2.ONE * (dimension + 2)), {"red": Color("f16e64"), "green": Color("83d780"), "blue": Color("7aa7f0")}[b.color], false, line_width())
+			draw_set_transform(center + Vector2(0, 2) if b.kind == "solar" else center, b.aim)
+			if b.kind == "solar": draw_texture_rect(textures.solar_gun, Rect2(-16, -16, 32, 32), false)
+			else: draw_texture_rect(textures.barrel, Rect2(-16, -16, 32, 32), false)
 			draw_set_transform(Vector2.ZERO)
+
+func line_width() -> float:
+	return 1.0 / get_screen_transform().x.length()

@@ -41,7 +41,7 @@ func run() -> void:
 	await process_frame
 	game.research("barriers", true)
 	game.research("conveyor_speed", true)
-	check(game.TECH.copper_storage.parent == "conveyor_speed" and game.TECH.copper_storage.cost == {"scrap": 15, "copper": 35}, "Copper storage research follows belt speed and costs fifteen scrap plus thirty-five copper")
+	check(game.TECH.copper_storage.parent == "turret_range" and game.TECH.copper_storage.cost == {"scrap": 7, "copper": 35}, "Copper storage research follows belt speed and costs fifteen scrap plus thirty-five copper")
 	check(not game.unlocked("copper_store"), "Silo remains locked until its own research")
 	game.research("copper_storage", true)
 	check(game.unlocked("copper_store") and game.building_cost("copper_store") == {"scrap": 10}, "Copper silo starts at ten scrap")
@@ -93,6 +93,7 @@ func run() -> void:
 	print("CONTROLS PATHS STORAGE CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
 
 
 

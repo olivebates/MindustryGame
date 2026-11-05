@@ -1,1 +1,16 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect x="4" y="5" width="56" height="55" fill="#3d3537" stroke="#a28c79" stroke-width="2"/><path d="M13 16Q32 1 51 16V47Q32 63 13 47Z" fill="#5b5555" stroke="#b7a28c" stroke-width="2"/><ellipse cx="32" cy="16" rx="19" ry="9" fill="#e7a468" stroke="#d4c2a4" stroke-width="2"/><path d="M15 29Q32 40 49 29M15 41Q32 52 49 41" fill="none" stroke="#9b9484" stroke-width="3"/><rect x="26" y="28" width="12" height="18" fill="#e7a468" stroke="#33252e" stroke-width="2"/><path d="M7 12V20M57 12V20M7 45V53M57 45V53" stroke="#e7a468" stroke-width="3"/></svg>
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+<defs><linearGradient id="metal"><stop stop-color="#5b3830"/><stop offset=".28" stop-color="#d89762"/><stop offset=".5" stop-color="#f0bd81"/><stop offset=".8" stop-color="#a06545"/><stop offset="1" stop-color="#51342f"/></linearGradient><radialGradient id="lid" cx="38%" cy="28%"><stop stop-color="#ffd59b"/><stop offset=".7" stop-color="#c58a59"/><stop offset="1" stop-color="#794c37"/></radialGradient></defs>
+<path d="M13 5H115L123 13V113L113 123H15L5 113V15Z" fill="#27232a" stroke="#9f8067" stroke-width="2"/>
+<path d="M16 12H112V112H16Z" fill="#403035" stroke="#5c4540" stroke-width="2"/>
+<path d="M21 35Q64 8 107 35V91Q64 122 21 91Z" fill="#bf885b" stroke="#e8b482" stroke-width="2"/>
+<ellipse cx="64" cy="35" rx="43" ry="24" fill="#d19c68" stroke="#f3c894" stroke-width="2"/>
+<ellipse cx="64" cy="35" rx="33" ry="17" fill="#915e42" stroke="#5c3c32" stroke-width="2"/>
+<ellipse cx="64" cy="33" rx="29" ry="14" fill="#c58b59" stroke="#e9b47d" stroke-width="1.5"/>
+<path d="M46 24L62 18L81 24V40L65 47L46 40Z" fill="#efb77c" stroke="#845338" stroke-width="2"/><path d="M46 24L65 31L81 24M65 31V47" fill="none" stroke="#9e6340" stroke-width="2"/>
+<path d="M23 60Q64 85 105 60M23 80Q64 105 105 80" fill="none" stroke="#54372f" stroke-width="7"/><path d="M23 57Q64 82 105 57M23 77Q64 102 105 77" fill="none" stroke="#edb47d" stroke-width="3"/>
+<path d="M29 48V93M99 48V93" stroke="#734631" stroke-width="4"/><path d="M32 50V94M96 50V94" stroke="#f0bb83" stroke-width="1.5"/>
+<rect x="52" y="68" width="24" height="32" rx="3" fill="#332b2c" stroke="#f2c38c" stroke-width="2"/><path d="M57 94V76H71V94Z" fill="#e5a163"/><path d="M57 82H71M57 88H71" stroke="#8e573b"/>
+<path d="M11 23V37M117 23V37M11 91V105M117 91V105" stroke="#d89b69" stroke-width="4"/>
+<g fill="#f6ca95" stroke="#674636"><circle cx="14" cy="14" r="3"/><circle cx="114" cy="14" r="3"/><circle cx="14" cy="114" r="3"/><circle cx="114" cy="114" r="3"/></g>
+</svg>
+

@@ -23,11 +23,11 @@ func run() -> void:
 	game.ores[Vector2i(23, 22)] = "copper"
 	game._add_building(Vector2i(23, 22), "drill", 0)
 	var before: int = game.delivered
-	for frame in 1200: game.simulate(1.0 / 60.0)
-	check(game.delivered - before >= 12, "One item per second extractor feeds full-rate belt line")
+	for frame in 2400: game.simulate(1.0 / 60.0)
+	check(game.delivered - before >= 1, "One item per ten seconds extractor feeds a slower belt line")
 	var delivered: int = game.delivered
 	for frame in 600: game.simulate(1.0 / 60.0)
-	check(game.delivered - delivered == 10, "Steady state delivers exactly ten items in ten seconds")
+	check(game.delivered - delivered == 1, "Steady state delivers one item in ten seconds")
 	var fractional_ranges := false
 	for stats in game.Content.ENEMY_TYPES.values(): fractional_ranges = fractional_ranges or fmod(stats.reach, game.TILE) != 0
 	for kind in ["solar", "turret", "repeater", "cannon"]: fractional_ranges = fractional_ranges or fmod(game.turret_range(kind), game.TILE) != 0
@@ -46,11 +46,13 @@ func run() -> void:
 	game.inventory.copper = 20
 	game.inventory.scrap = 0
 	game.tutorial.tech_available = true
+	game.research("barriers", true)
+	game.inventory.copper = 30
 	game.hud.show_tech_tree()
-	var prices: Dictionary = game.hud.tech_buttons.barriers.button.get_meta("cost_labels")
+	var prices: Dictionary = game.hud.tech_buttons.turret_range.button.get_meta("cost_labels")
 	check(prices.copper.get_theme_color("font_color") == Color.WHITE and prices.scrap.get_theme_color("font_color") == game.hud.ERROR_COLOR, "Tech prices independently color affordable copper white and missing scrap red")
 	game.inventory.copper = 0
-	game.inventory.scrap = 3
+	game.inventory.scrap = 7
 	game.hud.refresh()
 	check(prices.copper.get_theme_color("font_color") == game.hud.ERROR_COLOR and prices.scrap.get_theme_color("font_color") == Color.WHITE, "Tech price colors update independently as inventory changes")
 	game.hud.close_modal()
@@ -69,4 +71,6 @@ func run() -> void:
 	print("LATEST CHANGE CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
+
 

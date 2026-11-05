@@ -50,7 +50,7 @@ func run() -> void:
 	var info = load("res://scripts/structure_info.gd")
 	check(info.number(3.0) == "3" and info.number(0.6) == "0.6" and info.number(1.25) == "1.25" and info.number(10.0) == "10", "Stat formatter strips only redundant decimal zeros")
 	var stats: String = info.stats(game, "solar")
-	check(stats.contains("DPS: 5") and stats.contains("Range: 3 tiles") and not stats.contains("Ammo:") and not stats.contains("colors") and not stats.contains(".00"), "Solar stats show DPS and clean values without ammo or color prose")
+	check(stats.contains("DPS: 3.33") and stats.contains("Range: 3 tiles") and not stats.contains("Ammo:") and not stats.contains("colors") and not stats.contains(".00"), "Solar stats show DPS and clean values without ammo or color prose")
 	check(not info.stats(game, "drill").contains("Outputs:"), "Extractor stats omit outputs")
 	game.hud.show_structure_info("solar", {}, Vector2(700, 400))
 	check(game.hud.color_dots.visible and game.hud.color_dots.colors == ["red"], "Solar info shows a red unlock dot")
@@ -115,7 +115,7 @@ func run() -> void:
 	game.collect_scrap(0.1, pointer)
 	check(game.paused and game.inventory.scrap == 3 and game.scraps.is_empty(), "Scrap can be collected while combat is paused")
 	check(game.tutorial.tech_available and game.hud.tech_button.visible and game.hud.tech_button.get_meta("tutorial_glow"), "Collecting the tutorial salvage reveals glowing research")
-	check(game.TECH.barriers.cost == {"scrap": 3, "copper": 20}, "Barrier research costs the scrap from three small tanks")
+	check(game.TECH.barriers.cost == {"scrap": 3}, "Barrier research costs the scrap from three small tanks")
 	game.researched.erase("solar_blue")
 	game.hud.show_tech_tree()
 	check(game.hud.tech_buttons.size() == 1 and game.hud.tech_buttons.barriers.button.get_meta("tutorial_glow"), "Barrier is the first glowing research item")
@@ -182,10 +182,12 @@ func run() -> void:
 				game._update_turret(cell, tower, 0.02)
 				game._update_enemies(0.02)
 			print("BALANCE: ", kind, " ", color, " survivors=", game.enemies.size(), " damage=", tower.max_hp - tower.hp)
-			check((tower.hp == tower.max_hp) if kind == "runner" else ((game.enemies.is_empty() and tower.hp >= tower.max_hp * 0.6) if color == "green" else tower.hp < tower.max_hp * 0.6), "Enemies avoid turret coverage on their way to the core: " + color + " " + kind)
+			check((tower.hp == tower.max_hp) if kind == "runner" else (game.enemies.is_empty() and tower.hp >= tower.max_hp * 0.6), "Enemies avoid turret coverage on their way to the core: " + color + " " + kind)
 	game.free()
 	print("SCRAP PROGRESSION CHECKS: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
 
 
 

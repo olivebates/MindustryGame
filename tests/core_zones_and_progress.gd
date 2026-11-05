@@ -73,6 +73,7 @@ func run() -> void:
 	check(game.textures.has("core_inactive"), "Inactive core has a dedicated red SVG")
 	fresh()
 	var first: Vector2i = game.current_core
+	game.set_camera_zoom(1.0) # Keep the frontier outside the viewport for this guidance fixture.
 	var frontier: Vector2i = first + Vector2i(32, 0)
 	game._add_building(frontier, "core", 0)
 	game.cores.append(frontier)

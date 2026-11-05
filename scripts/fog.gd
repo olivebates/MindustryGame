@@ -5,5 +5,5 @@ func _draw() -> void:
 	for y in game.HEIGHT:
 		for x in game.WIDTH:
 			var cell := Vector2i(x, y)
-			if not game.visible_cells.has(cell):
+			if not game.is_cell_visible(cell):
 				draw_rect(Rect2(Vector2(cell * game.TILE), Vector2.ONE * game.TILE), Color("09070a"))

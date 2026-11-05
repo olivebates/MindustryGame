@@ -95,20 +95,20 @@ func run() -> void:
 		if is_instance_valid(region): framed_panels = framed_panels and region.get_theme_stylebox("panel") is StyleBoxFlat
 	check(framed_panels, "GUI containers retain black backgrounds and tan frames")
 	var button_style: StyleBoxFlat = card.get_theme_stylebox("normal")
-	check(button_style.get_margin(SIDE_LEFT) == 0 and button_style.border_width_left == 1, "Buttons retain zero margin with a one-pixel outline")
+	check(button_style.get_margin(SIDE_LEFT) == 0 and button_style.border_width_left == 2, "Buttons retain zero margin with a two-pixel outline")
 	game.inventory.copper = 300
 	game.inventory.iron = 200
 	check(game.research("repeater"), "Research can unlock a building after the menu was created")
 	game.hud.refresh()
 	check(game.hud.cards.has("repeater") and not game.hud.cards.has("cannon"), "Research reveals only newly unlocked designs")
-	var valid_audio: bool = game.audio.streams.size() == 15
+	var valid_audio: bool = game.audio.streams.size() == 16
 	for id in game.audio.streams:
 		var stream: AudioStreamWAV = game.audio.streams[id]
-		valid_audio = valid_audio and stream != null and stream.get_length() > 0.02 and stream.get_length() <= 1.05 and stream.data.size() > 0
+		valid_audio = valid_audio and stream != null and stream.get_length() > 0.02 and stream.get_length() <= (2.5 if id == "core_capture" else 1.05) and stream.data.size() > 0
 		var peak := 0
 		for index in range(0, stream.data.size() - 1, 2): peak = maxi(peak, absi(stream.data.decode_s16(index)))
 		valid_audio = valid_audio and peak > 200 and peak < 32767
-	check(valid_audio, "All fifteen active generated WAVs load, contain audible signal and avoid clipping")
+	check(valid_audio, "All sixteen active generated WAVs load, contain audible signal and avoid clipping")
 	check(game.audio.ui_voices.size() == 6 and game.audio.world_voices.size() == 12, "UI and positional game sounds use bounded voice pools")
 	var before: bool = game.audio.muted
 	game.toggle_audio()
@@ -130,6 +130,10 @@ func run() -> void:
 	print("UI AND AUDIO CHECKS: %d passed, %d failed" % [checks - failures, failures])
 	game.free()
 	quit(0 if failures == 0 else 1)
+
+
+
+
 
 
 

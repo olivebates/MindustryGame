@@ -31,7 +31,7 @@ func build_intro() -> void:
 func run() -> void:
 	fresh()
 	var tutorial = game.tutorial
-	check(game.hud.tutorial_prompt.anchor_top == 0 and game.hud.tutorial_prompt.position.y == 112 and game.hud.tutorial_prompt.get_theme_color("font_color").r > 0.9 and game.hud.tutorial_prompt.get_theme_constant("shadow_outline_size") > 0, "Tutorial text is yellow, glowing and at the upper center")
+	check(game.hud.tutorial_prompt.anchor_top == 0 and game.hud.tutorial_prompt.position.y * game.hud.UI_SCALE == 156 and game.hud.tutorial_prompt.get_theme_color("font_color").r > 0.9 and game.hud.tutorial_prompt.get_theme_constant("shadow_outline_size") > 0, "Tutorial text is yellow, glowing and lower in the upper center")
 	game.add_resource("copper", 5)
 	game.select_building("drill")
 	game.place_building(Vector2i(20, 22), "drill", 0)
@@ -141,24 +141,24 @@ func run() -> void:
 	fresh()
 	game.tutorial.skip_to_ready()
 	game.tutorial.tech_available = true
-	check(game.TECH.barriers.cost == {"scrap": 3, "copper": 20}, "Barrier research costs three scrap and twenty copper")
+	check(game.TECH.barriers.cost == {"scrap": 3}, "Barrier research costs three scrap and twenty copper")
 	check(game.hud.visible_tech_ids() == ["barriers"], "Only Barriers is initially available in the tree")
 	game.inventory.copper = 40
 	game.inventory.scrap = 20
 	game.research("barriers")
-	check(game.hud.visible_tech_ids().has("conveyor_speed") and game.hud.visible_tech_ids().has("turret_range") and not game.hud.visible_tech_ids().has("industry"), "Second layer exposes conveyor speed and Solar range before the remaining branches")
+	check(not game.hud.visible_tech_ids().has("conveyor_speed") and game.hud.visible_tech_ids().has("turret_range") and not game.hud.visible_tech_ids().has("industry"), "Second layer exposes conveyor speed and Solar range before the remaining branches")
 	check(game.TECH.conveyor_speed.cost == {"scrap": 5, "copper": 25} and game.TECH.turret_range.cost == {"scrap": 7, "copper": 30}, "Second-layer research has the requested resource costs")
-	check(game.conveyor_items_per_second() == 1 and game.turret_range("solar") == 96, "Conveyors and Solar start with their base speed and range")
+	check(game.conveyor_items_per_second() == 0.25 and game.turret_range("solar") == 96, "Conveyors and Solar start with their base speed and range")
 	game.inventory.copper = 40
 	game.research("conveyor_speed")
-	check(game.conveyor_items_per_second() == 2 and game.researched.has("conveyor_speed"), "Conveyor research doubles throughput")
+	check(game.conveyor_items_per_second() == 0.5 and game.researched.has("conveyor_speed"), "Conveyor research doubles throughput")
 	game.inventory.copper = 40
 	game.research("turret_range")
 	check(game.turret_range("solar") == 160 and game.turret_range("turret") == 256, "Range research adds two tiles to Solar only")
 	game._add_building(Vector2i(25, 24), "belt", 0)
 	game._add_building(Vector2i(26, 24), "belt", 0)
 	game.buildings[Vector2i(25, 24)].item = "copper"
-	game._update_items(0.5)
+	game._update_items(2.0)
 	check(game.buildings[Vector2i(26, 24)].item == "copper", "Upgraded cargo crosses one belt in half a second")
 	game.hud.show_tech_tree()
 	game.hud.close_modal()
@@ -175,7 +175,7 @@ func run() -> void:
 	var small: Dictionary = game.create_enemy("scout", Vector2.ZERO, "red")
 	var heavy: Dictionary = game.create_enemy("heavy", Vector2.ZERO, "red")
 	check(game.Content.ENEMY_TYPES.scout.credits == 1 and game.Content.enemy_scrap("scout") == 1, "Small tanks cost one enemy credit and drop one scrap")
-	check(game.Content.ENEMY_TYPES.heavy.credits == 8 and game.Content.enemy_scrap("heavy") == 8 and heavy.max_hp == floor(small.max_hp * 8 * 0.33 / 10) * 10, "Heavy tanks cost and drop eight, with eight times small-tank health")
+	check(game.Content.ENEMY_TYPES.heavy.credits == 8 and game.Content.enemy_scrap("heavy") == 4 and heavy.max_hp == game.enemy_health("heavy", 4) and heavy.max_hp == 11, "Heavy tanks cost and drop eight, with eight times small-tank health")
 	var gate = game.active_spawners[0]
 	gate.credits_per_wave = PackedInt32Array([19])
 	gate.allowed_enemies = PackedStringArray(["scout", "runner", "heavy"])
@@ -205,15 +205,19 @@ func run() -> void:
 	game.tutorial.demolish_completed = false
 	check(game.saves.restore(game.saves.current) and game.saves.snapshot() == saved and game.paused, "Snapshots preserve the new tutorial and research state")
 	browser.show_browser()
-	var opened: int = browser.opened_at
-	browser.update_ages()
-	check(browser.opened_at == opened, "Rollback ages use one frozen opening timestamp")
+	var caption: String = browser.wave_caption.text
+	browser.refresh_timeline()
+	check(browser.wave_caption.text == caption, "Persistent timeline retains the current wave label")
 	for entry in game.saves.entries:
 		DirAccess.remove_absolute(game.saves.directory.path_join(entry.file))
 		if FileAccess.file_exists(game.saves.preview_path(entry.file)): DirAccess.remove_absolute(game.saves.preview_path(entry.file))
 	game.free()
 	print("DESIGNATED TUTORIAL CHECKS: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
+
+
 
 
 

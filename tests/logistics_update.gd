@@ -19,6 +19,7 @@ func fresh() -> void:
 	game.researched["barriers"] = true
 	game.researched["weapons"] = true
 	game.researched["industry"] = true
+	game.researched["splitter"] = true
 	for kind in ["turret", "repeater", "cannon"]:
 		for color in ["red", "green", "blue"]: game.researched[kind + "_" + color] = true
 	game.base_copper_capacity = 500
@@ -52,10 +53,10 @@ func run() -> void:
 	middle.position = game.get_canvas_transform() * game.cell_center(Vector2i(4, 4))
 	game._unhandled_input(middle)
 	check(game.middle_blueprint_drag and game.active_tool == "blueprint_select" and game.selected == "", "Middle press starts a blueprint selection box and clears construction")
-	game.extend_drag(Vector2i(6, 5))
-	check(game.blueprint_end == Vector2i(6, 5) and game.camera.position == camera_before, "Middle dragging grows the box without panning the camera")
+	game.extend_drag(Vector2i(7, 6))
+	check(game.blueprint_end == Vector2i(7, 6) and game.camera.position == camera_before, "Middle dragging grows the box without panning the camera")
 	middle.pressed = false
-	middle.position = game.get_canvas_transform() * game.cell_center(Vector2i(6, 5))
+	middle.position = game.get_canvas_transform() * game.cell_center(Vector2i(7, 6))
 	game._input(middle)
 	check(not game.dragging and not game.middle_blueprint_drag and game.active_tool == "blueprint_stamp", "Middle release transitions directly into blueprint stamping")
 	check(game.blueprint.size() == 3 and game.stamp_blueprint(Vector2i(14, 4)), "Middle-drag blueprint captures and places the complete configuration")
@@ -76,13 +77,13 @@ func run() -> void:
 		game._unhandled_input(reload_key)
 		check(tower.ammo == 7 and game.inventory == inventory, "E cannot reload %s or spend stored materials" % kind)
 		var rectangle: Rect2 = game.ammo_bar_rect(Vector2i(10, 10))
-		check(rectangle.size == Vector2(32, 3) and rectangle.end == game.building_center(Vector2i(10, 10)) + Vector2(16, 16), "%s ammo bar spans the sprite and is flush inside its bottom edge" % kind)
+		check(rectangle.size == Vector2(game.TILE * game.footprint_size(kind), 3) and rectangle.end == game.building_center(Vector2i(10, 10)) + Vector2.ONE * (game.TILE * game.footprint_size(kind) / 2.0), "%s ammo bar spans the sprite and is flush inside its bottom edge" % kind)
 		game.remove_building(Vector2i(10, 10), false)
 	var tower := add(Vector2i(10, 10), "turret")
 	tower.ammo = 7
 	var feeder := add(Vector2i(9, 10))
-	feeder.item = "copper"
-	game._update_items(game.FLOW_INTERVAL + 0.001)
+	feeder.item = "iron"
+	game._update_items(game.FLOW_INTERVAL * 4 + 0.001)
 	check(tower.ammo == 8 and feeder.item == "", "Conveyors remain able to refill a depleted turret")
 	fresh()
 	var center := Vector2i(10, 10)
@@ -102,7 +103,7 @@ func run() -> void:
 		input.travel = 1.0
 		game._move_items()
 		conserved = conserved and router.item == resource and input.item == ""
-		game._update_items(game.FLOW_INTERVAL + 0.001)
+		game._update_items(game.FLOW_INTERVAL * 4 + 0.001)
 		var count := 0
 		for direction in outputs:
 			var belt: Dictionary = game.buildings[center + game.DIRS[direction]]
@@ -119,17 +120,17 @@ func run() -> void:
 	router.next_output = 0
 	router.route_dir = -1
 	game.buildings[center + Vector2i.RIGHT].item = "iron"
-	game._update_items(game.FLOW_INTERVAL)
-	check(router.item == "copper" and router.route_dir == 0 and router.next_output == 0, "Blocked splitter output holds its turn to preserve equal distribution")
+	game._update_items(game.FLOW_INTERVAL * 4)
+	check(router.item == "" and router.next_output == 2, "Splitter skips a blocked output and delivers to the next free belt")
 	game.buildings[center + Vector2i.RIGHT].item = ""
-	game._update_items(game.FLOW_INTERVAL)
-	check(router.item == "" and router.next_output == 1, "Splitter advances its direction only after successful delivery")
+	game._update_items(game.FLOW_INTERVAL * 4)
+	check(router.item == "" and router.next_output == 2, "Splitter advances its direction only after successful delivery")
 	router.item = "verdite"
 	router.route_dir = 0
 	router.travel = 0.5
 	game.remove_building(center + Vector2i.RIGHT, false)
 	game._update_items(0.1)
-	check(router.route_dir == 1 and router.item == "verdite", "Splitter selects a remaining outgoing belt when its route is removed")
+	check(router.route_dir == 3 and router.item == "verdite", "Splitter selects a remaining unfilled belt when its route is removed")
 	fresh()
 	router = add(center, "splitter")
 	router.item = "alloy"
@@ -155,9 +156,9 @@ func run() -> void:
 	game.extend_drag(Vector2i(5, 5))
 	check(existing.dir == 1, "A painted conveyor turns as the drag changes direction")
 	var header: Panel = game.hud.root.get_node("MaterialInventory")
-	check(header.position.x == 0 and header.size.x == 144 and game.hud.palette.size.x == game.hud.root.size.x, "Inventory occupies the left edge and the bottom GUI spans the viewport")
+	check(header.position.x == 0 and header.size.x == 160 and game.hud.palette.size.x == game.hud.root.size.x, "Inventory occupies the left edge and the bottom GUI spans the viewport")
 	var frame: StyleBoxFlat = header.get_theme_stylebox("panel")
-	check(frame.bg_color == game.hud.BACK and frame.border_color == game.hud.BORDER and frame.border_width_top == 1, "GUI panels retain black backgrounds and one-pixel tan outlines")
+	check(frame.bg_color == game.hud.BACK and frame.border_color == game.hud.BORDER and frame.border_width_top == 2, "GUI panels retain black backgrounds and two-pixel tan outlines")
 	var clean_catalog := true
 	for data in game.BUILDINGS.values(): clean_catalog = clean_catalog and not data.has("description")
 	for data in game.TECH.values(): clean_catalog = clean_catalog and not data.has("description")
@@ -169,6 +170,11 @@ func run() -> void:
 	print("LOGISTICS UPDATE CHECKS: %d passed, %d failed" % [checks - failures, failures])
 	game.free()
 	quit(0 if failures == 0 else 1)
+
+
+
+
+
 
 
 

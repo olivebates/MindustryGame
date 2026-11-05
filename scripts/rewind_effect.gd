@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 var frame: Texture2D
 var ghosts: Array = []
 var traces: Array = []
@@ -24,8 +24,12 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 	for trace in traces:
 		var point: Vector2 = trace.to.lerp(trace.from, progress)
-		draw_line(point, point.lerp(trace.from, 0.15), Color(trace.color, fade), 2)
+		draw_line(point, point.lerp(trace.from, 0.15), Color(trace.color, fade), line_width())
 	for line in 10:
 		var y := fposmod(size.y * (float(line) / 10.0 - progress * 0.6), size.y)
-		draw_line(Vector2(0, y), Vector2(size.x, y), Color(0.5, 0.85, 1.0, fade * 0.12), 1)
+		draw_line(Vector2(0, y), Vector2(size.x, y), Color(0.5, 0.85, 1.0, fade * 0.12), line_width())
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.2, 0.65, 0.85, sin(progress * PI) * 0.06))
+
+func line_width() -> float:
+	return preload("res://scripts/drawing_style.gd").stroke(self)
+

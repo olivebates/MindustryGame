@@ -63,7 +63,7 @@ func run() -> void:
 	check(tutorial.central_message() == "Press space to unpause", "Both visited categories and completed Alt introduce unpause")
 	game.wave = 4
 	var heavy: Dictionary = game.create_enemy("heavy", position, "red")
-	check(heavy.max_hp == 110 and game.Content.ENEMY_TYPES.heavy.damage == 15 and game.Content.ENEMY_TYPES.heavy.reload == 1.0, "Wave-four heavy has reduced rounded health and fifteen damage per second")
+	check(heavy.max_hp == 11 and game.Content.ENEMY_TYPES.heavy.damage == 15 and game.Content.ENEMY_TYPES.heavy.reload == 1.0, "Wave-four heavy has reduced rounded health and fifteen damage per second")
 	game._add_building(game.current_core, "core", 0)
 	game.wave = 1
 	game._complete_wave()
@@ -74,4 +74,5 @@ func run() -> void:
 	print("ENEMY JUNCTION TUTORIAL CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
 

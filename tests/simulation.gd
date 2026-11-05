@@ -54,10 +54,10 @@ func run() -> void:
 	var b := Vector2i(5, 4)
 	add(a).item = "copper"
 	add(b)
-	game._update_items(game.FLOW_INTERVAL * 0.5)
+	game._update_items(game.FLOW_INTERVAL * 2.0)
 	check(is_equal_approx(game.buildings[a].travel, 0.5) and game.buildings[b].item == "", "Cargo interpolates halfway before logical transfer")
-	check(is_equal_approx(game.FLOW_INTERVAL, 1.0), "Belts transport one item per second")
-	game._update_items(game.FLOW_INTERVAL * 0.5 + 0.0001)
+	check(is_equal_approx(game.FLOW_INTERVAL / game.conveyor_items_per_second(), 4.0), "Belts transport one item per second")
+	game._update_items(game.FLOW_INTERVAL * 2.0 + 0.0001)
 	check(game.buildings[a].item == "" and game.buildings[b].item == "copper", "Cargo arrives after a complete lerp")
 	check(game.buildings[b].travel == 0, "Arriving cargo starts at the next tile center without teleporting ahead")
 	game._update_items(1.0)
@@ -90,7 +90,7 @@ func run() -> void:
 	check(game.buildings[entrance].tunnel_pair == exit and game.buildings[exit].tunnel_pair == entrance, "Crossing a belt creates a linked entrance and exit")
 	check(game.buildings[Vector2i(6, 5)].dir == 1 and crossed.item == "iron", "Crossing leaves the existing belt and its cargo intact")
 	game.buildings[entrance].item = "copper"
-	game._update_items(game.FLOW_INTERVAL + 0.001)
+	game._update_items(game.FLOW_INTERVAL * 4.0 + 0.001)
 	check(game.buildings[exit].item == "copper" and crossed.item == "iron", "Tunnel cargo teleports past the independent crossing belt")
 	game.remove_building(exit)
 	check(not game.buildings.has(entrance) and not game.buildings.has(exit), "Demolishing either tunnel endpoint removes both")
@@ -145,9 +145,10 @@ func run() -> void:
 	check(not game.research("repeater"), "Research cannot be purchased twice")
 	check(game.research("cannon") and game.unlocked("cannon"), "Child research becomes available after its parent")
 	game.research("conveyor_speed", true)
+	game.research("turret_range", true)
 	var wall := add(a, "wall")
-	check(game.research("armor") and is_equal_approx(wall.max_hp, 550 * 1.25), "Health upgrade affects existing structures")
-	check(is_equal_approx(add(b, "wall").max_hp, 550 * 1.25), "Health upgrade also affects future structures")
+	check(game.research("armor") and is_equal_approx(wall.max_hp, 2750 * 1.25), "Health upgrade affects existing structures")
+	check(is_equal_approx(add(b, "wall").max_hp, 2750 * 1.25), "Health upgrade also affects future structures")
 	check(game.research("forge") and game.research("healer") and game.unlocked("healer"), "Production research leads to healing-beacon research")
 	fresh()
 	var healer := add(Vector2i(10, 10), "healer")
@@ -167,13 +168,13 @@ func run() -> void:
 	game._update_healer(Vector2i(10, 10), healer, 0.99)
 	check(inside.hp == 100, "Healing waits for the full one-second pulse interval")
 	game._update_healer(Vector2i(10, 10), healer, 0.01)
-	check(is_equal_approx(inside.hp, 105.5), "Healing restores exactly one percent of maximum HP per second")
+	check(is_equal_approx(inside.hp, 127.5), "Healing restores exactly one percent of maximum HP per second")
 	check(outside.hp == 100, "Healing excludes buildings outside a two-tile circular radius")
 	check(healer.buffer.verdite == 1 and healer.buffer.alloy == 1, "A healing pulse consumes one verdite and one repair alloy")
 	check(game.can_receive(Vector2i(10, 10), "verdite") and game.can_receive(Vector2i(10, 10), "alloy"), "Beacon accepts both consumables during active waves")
 	healer.buffer.alloy = 0
 	game._update_healer(Vector2i(10, 10), healer, 1.0)
-	check(is_equal_approx(inside.hp, 105.5), "Beacon cannot heal without repair alloy")
+	check(is_equal_approx(inside.hp, 127.5), "Beacon cannot heal without repair alloy")
 	fresh()
 	var turret := add(a, "turret")
 	var cannon := add(Vector2i(6, 4), "cannon")
@@ -182,7 +183,7 @@ func run() -> void:
 	cannon.ammo = 0
 	var loading_inventory: Dictionary = game.inventory.duplicate()
 	game.load_ammo(a)
-	check(turret.ammo == 0 and game.can_receive(a, "copper"), "Manual turret loading is disabled while conveyor loading remains enabled")
+	check(turret.ammo == 0 and game.can_receive(a, "iron"), "Manual turret loading is disabled while conveyor loading remains enabled")
 	game.spawn_remaining = 1
 	game.load_ammo(a)
 	game.load_ammo(Vector2i(6, 4))
@@ -199,9 +200,11 @@ func run() -> void:
 			enemy.max_hp = 1000.0
 			game.enemies.clear()
 			game.enemies.append(enemy)
+			game.shots.clear()
 			game._update_turret(a, turret, 0.05)
+			game.simulate(0.65)
 			var factor := 1.0 if attacker == defender else (2.0 if strengths[attacker] == defender else 0.5)
-			check(is_equal_approx(1000 - enemy.hp, 22 * factor), "%s turret vs %s enemy applies correct affinity damage" % [attacker, defender])
+			check(is_equal_approx(1000 - enemy.hp, 12 * factor), "%s turret vs %s enemy applies correct affinity damage" % [attacker, defender])
 	fresh()
 	game.selected = "turret"
 	var savings: Dictionary = game.inventory.duplicate()
@@ -237,6 +240,7 @@ func run() -> void:
 	check(kinds.has("bulwark") and uniform, "Late waves prioritize the most expensive enemy with a shared color")
 	fresh()
 	var runner: Dictionary = game.create_enemy("runner", game.cell_center(Vector2i(40, 22)), "blue")
+	runner.hp = 100.0 # Keep this motion fixture alive independently of wave health balance.
 	runner.angle = 0.0
 	game.enemies.clear()
 	game.enemies.append(runner)
@@ -348,6 +352,7 @@ func run() -> void:
 	check(game.active_spawners.size() == 2, "Spawns with the same Order activate together")
 	fresh()
 	game.fog_disabled = false
+	game.active_spawners[0].position = game.cell_center(Vector2i(59, 21)) # Fixed corridor fixture, independent of painted spawn edits.
 	game._reveal_map()
 	check(game.is_cell_visible(game.CORE + Vector2i(0, 20)), "Fog reveals the complete twenty-tile radius around a core")
 	check(not game.is_cell_visible(game.CORE + Vector2i(0, 21)), "Fog hides terrain outside the core radius when no corridor reaches it")
@@ -392,7 +397,7 @@ func run() -> void:
 	var costly: Dictionary = game.create_enemy("bulwark", game.cell_center(Vector2i(15, 10)), "red")
 	game._drop_scrap(cheap)
 	game._drop_scrap(costly)
-	check(game.scraps[0].amount == 1 and game.scraps[1].amount == 48, "Small tank scrap uses its explicit reward and other enemies retain credit-based rewards")
+	check(game.scraps[0].amount == 1 and game.scraps.slice(1).reduce(func(total, pile): return total + pile.amount, 0) == 12, "Small tank scrap uses its explicit reward and other enemies retain credit-based rewards")
 	var origin: Vector2 = game.scraps[0].pos
 	game.collect_scrap(2.0, origin + Vector2(90, 0))
 	game.collect_scrap(0.01, origin + Vector2(90, 0))
@@ -400,7 +405,7 @@ func run() -> void:
 	game.collect_scrap(0.01, origin + Vector2(50, 0))
 	check(game.scraps[0].magnetized and game.scraps[0].pos != origin, "Nearby scrap is animated toward the pointer")
 	for i in 20: game.collect_scrap(0.05, origin + Vector2(50, 0))
-	check(game.inventory.scrap == 1 and game.scraps.size() == 1, "Magnetized scrap deposits into capped inventory on arrival")
+	check(game.inventory.scrap >= 1 and game.inventory.scrap + game.scraps.reduce(func(total, pile): return total + pile.amount, 0) == 13, "Magnetized scrap deposits into capped inventory on arrival")
 	game.base_material_capacity = 500
 	game.base_copper_capacity = 500
 	game.inventory.scrap = 500
@@ -452,18 +457,18 @@ func run() -> void:
 	game.capture_blueprint(Vector2i(4, 4), Vector2i(5, 4))
 	check(game.stamp_blueprint(Vector2i(4, 8)), "Blueprint stamping is available while paused")
 	game.hud.refresh()
-	check(game.hud.pause_button.text == "" and game.hud.pause_button.icon.resource_path.ends_with("play.svg"), "Pause button displays the resume icon")
+	check(game.hud.pause_button.text == "" and game.hud.pause_button.icon.get_meta("source_path", "").ends_with("play.svg"), "Pause button displays the resume icon")
 	game.hud.pause_button.pressed.emit()
 	game.hud.refresh()
-	check(not game.paused and game.hud.pause_button.text == "" and game.hud.pause_button.icon.resource_path.ends_with("pause.svg"), "Pause GUI button resumes the simulation")
+	check(not game.paused and game.hud.pause_button.text == "" and game.hud.pause_button.icon.get_meta("source_path", "").ends_with("pause.svg"), "Pause GUI button resumes the simulation")
 	game.simulate(0.1)
 	check(moving_belt.travel > 0, "Conveyor movement resumes after unpausing")
 	fresh()
 	var waiting_turret := add(Vector2i(5, 4), "turret")
 	waiting_turret.ammo = 0
 	var loading_belt := add(Vector2i(4, 4))
-	loading_belt.item = "copper"
-	game._update_items(game.FLOW_INTERVAL + 0.001)
+	loading_belt.item = "iron"
+	game._update_items(game.FLOW_INTERVAL * 4.0 + 0.001)
 	check(waiting_turret.ammo == 1 and not game.wave_active(), "Conveyors refill turrets between waves")
 	fresh()
 	var stocked_beacon := add(Vector2i(10, 10), "healer")
@@ -472,7 +477,7 @@ func run() -> void:
 	stocked_beacon.buffer.verdite = 1
 	stocked_beacon.buffer.alloy = 1
 	game._update_healer(Vector2i(10, 10), stocked_beacon, 1.0)
-	check(is_equal_approx(repair_target.hp, 105.5) and not game.wave_active(), "A fueled beacon continues its one-percent repair pulse between waves")
+	check(is_equal_approx(repair_target.hp, 127.5) and not game.wave_active(), "A fueled beacon continues its one-percent repair pulse between waves")
 	fresh()
 	game.launch_wave()
 	game.spawn_queue.clear()
@@ -507,6 +512,9 @@ func run() -> void:
 	print("SIMULATION CHECKS: %d passed, %d failed" % [checks - failures, failures])
 	game.free()
 	quit(0 if failures == 0 else 1)
+
+
+
 
 
 

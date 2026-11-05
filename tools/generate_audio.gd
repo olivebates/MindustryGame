@@ -16,7 +16,8 @@ const DEFINITIONS := {
  "gate": [1.0, 392.0, 784.0, 0.02, 0.25],
  "defeat": [0.85, 220.0, 55.0, 0.08, 0.25],
  "collect": [0.075, 1100.0, 1650.0, 0.04, 0.18],
- "rewind": [0.48, 1250.0, 110.0, 0.12, 0.28]
+ "rewind": [0.48, 1250.0, 110.0, 0.12, 0.28],
+ "core_capture": [2.3, 98.0, 98.0, 0.01, 0.48]
 }
 func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute("res://assets/audio")
@@ -42,6 +43,7 @@ func _initialize() -> void:
 			if id in ["build", "demolish", "shot", "cannon"]: tone = tone * 0.75 + sin(phase * 2.73) * 0.25
 			if id == "heal": tone = (tone + sin(phase * 1.5) * 0.5 + sin(phase * 2) * 0.3) / 1.8
 			if id == "gate": tone = (tone + sin(phase * 1.25) * 0.4 + sin(phase * 1.5) * 0.4) / 1.8
+			if id == "core_capture": tone = sin(phase * 0.5) * 0.45 + tone * 0.3 + sin(phase * 1.5) * 0.15 + sin(phase * 3.01) * exp(-time * 2.5) * 0.1
 			if id == "error": tone *= 0.4 + 0.6 * float(sin(time * TAU * 12) > 0)
 			filtered_noise = lerpf(filtered_noise, random.randf_range(-1, 1), 0.32)
 			var envelope := minf(1.0, time / 0.005) * pow(maxf(0, 1.0 - progress), 1.8)
@@ -60,5 +62,6 @@ func _initialize() -> void:
 			return
 	print("GENERATED %d ORIGINAL WAV EFFECTS" % DEFINITIONS.size())
 	quit()
+
 
 

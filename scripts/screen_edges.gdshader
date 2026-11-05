@@ -6,9 +6,10 @@ uniform bool paused = false;
 uniform int panel_count = 0;
 uniform vec4 panels[8];
 void fragment() {
-	vec2 distance_to_edge = min(UV, vec2(1.0) - UV) * viewport_size;
+	vec2 grid_uv = (floor(SCREEN_UV / SCREEN_PIXEL_SIZE / 2.0) + vec2(0.5)) * 2.0 * SCREEN_PIXEL_SIZE;
+	vec2 distance_to_edge = min(grid_uv, vec2(1.0) - grid_uv) * viewport_size;
 	float edge = min(distance_to_edge.x, distance_to_edge.y);
-	vec2 pixel = UV * viewport_size;
+	vec2 pixel = grid_uv * viewport_size;
 	bool inside_panel = false;
 	for (int i = 0; i < 8; i++) {
 		if (i >= panel_count) { break; }

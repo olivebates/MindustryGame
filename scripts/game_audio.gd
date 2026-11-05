@@ -1,7 +1,7 @@
 ﻿extends Node2D
 ## Pooled, rate-limited one-shots. This RNG never touches wave generation.
-const EFFECTS := ["ui_hover", "ui_click", "build", "demolish", "error", "shot", "cannon", "explosion", "heal", "research", "wave", "gate", "defeat", "collect", "rewind"]
-const COOLDOWNS := {"ui_hover": 0.045, "ui_click": 0.04, "build": 0.055, "demolish": 0.07, "error": 0.25, "shot": 0.065, "cannon": 0.12, "explosion": 0.09, "heal": 0.25, "collect": 0.07}
+const EFFECTS := ["ui_hover", "ui_click", "build", "demolish", "error", "shot", "cannon", "explosion", "heal", "research", "wave", "gate", "defeat", "collect", "rewind", "core_capture"]
+const COOLDOWNS := {"ui_hover": 0.045, "ui_click": 0.04, "build": 0.055, "demolish": 0.07, "error": 0.25, "shot": 0.065, "cannon": 0.12, "explosion": 0.09, "heal": 0.25, "collect": 0.2}
 var streams: Dictionary = {}
 var cooldowns: Dictionary = {}
 var ui_voices: Array[AudioStreamPlayer] = []
@@ -47,4 +47,6 @@ func toggle_mute() -> void:
 	if muted:
 		for voice in ui_voices: voice.stop()
 		for voice in world_voices: voice.stop()
+
+
 

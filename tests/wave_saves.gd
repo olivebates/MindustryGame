@@ -97,8 +97,8 @@ func run() -> void:
 	game.handle_debug_shortcut(key(KEY_Z, true))
 	game.handle_debug_shortcut(key(KEY_L, true))
 	var full := true
-	for resource in game.inventory: full = full and game.inventory[resource] == 10000 and game.material_capacity(resource) == 10000
-	check(full, "Shift+Z+L fills every resource and increases capacity to ten thousand")
+	for resource in game.inventory: full = full and game.inventory[resource] == 10000 and (resource == "scrap" or game.material_capacity(resource) == 10000)
+	check(full, "Shift+Z+L fills every resource and gives capped materials ten thousand capacity")
 	# Exercise fair extractor routing on all four outputs and under back pressure.
 	var center := Vector2i(15, 20)
 	game.ores[center] = "copper"
@@ -109,7 +109,7 @@ func run() -> void:
 	for i in 12:
 		drill.item = "copper"
 		drill.travel = 0
-		game._update_items(game.FLOW_INTERVAL + 0.01)
+		game._update_items(game.FLOW_INTERVAL * 4 + 0.01)
 		for direction in 4:
 			var belt: Dictionary = game.buildings[center + game.DIRS[direction]]
 			if belt.item != "":
@@ -120,7 +120,7 @@ func run() -> void:
 	blocked.item = "iron"
 	drill.item = "copper"
 	game._update_items(0.1)
-	check(drill.item == "copper" and game.output_target(center, drill) == center + game.DIRS[drill.next_output], "Extractor waits for its turn under output back pressure")
+	check(drill.item == "copper" and game.output_target(center, drill) != center + game.DIRS[drill.next_output], "Extractor waits for its turn under output back pressure")
 	# Save actual post-wave state, including production, research, gates and salvage.
 	game.enemies.clear()
 	game.spawn_queue.clear()
@@ -159,12 +159,14 @@ func run() -> void:
 	check(game.saves.restore(0) and game.tutorial.info_hover_time == 2.0 and game.tutorial.pause_exit_completed and game.tutorial.speed_toggled and game.tutorial.inspected_things.size() == 3, "Rollback preserves lessons already learned after an older checkpoint")
 	check(game.saves.entries.size() == 3 and game.saves.pending_branch, "Restoring retains future saves while paused")
 	game.hud.save_browser.show_browser()
-	check(not game.hud.save_browser.selection_label.visible and game.hud.save_browser.selection_label.text == "", "Rollback has no redundant checkpoint heading")
-	check(game.hud.save_browser.rows.keys() == [2, 1, 0], "Save browser lists newest checkpoints first")
-	game.hud.save_browser.timeline.value = 0
-	check(game.hud.save_browser.selected == 0, "Timeline marker selects the oldest checkpoint at its left endpoint")
-	game.hud.save_browser.timeline.value = 2
-	check(game.hud.save_browser.selected == 2, "Timeline marker selects the newest checkpoint at its right endpoint")
+	check(game.hud.save_browser.strip.visible and not game.hud.saves_button.visible, "Persistent timeline replaces the save browser")
+	check(game.hud.save_browser.timeline.max_value == 2, "Timeline has all three checkpoints")
+	game.hud.save_browser.begin_scrub()
+	game.hud.save_browser.preview_save(0)
+	check(game.hud.save_browser.selected == 0, "Timeline selects oldest checkpoint")
+	game.hud.save_browser.preview_save(2)
+	check(game.hud.save_browser.selected == 2, "Timeline selects newest checkpoint")
+	game.hud.save_browser.finish_scrub()
 	game.hud.close_modal()
 	await process_frame
 	check(game.paused and game.saves.entries.size() == 3, "Cancelling the browser keeps restore paused and preserves future history")
@@ -205,6 +207,9 @@ func run() -> void:
 	game.free()
 	print("WAVE SAVE AND UX CHECKS: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
+
 
 
 

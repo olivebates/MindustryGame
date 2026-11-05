@@ -108,7 +108,7 @@ func run() -> void:
 	check(game.researched.has("barriers") and not game.hud.tech_buttons.barriers.button.has_meta("cost_labels"), "Researched technology no longer shows its price")
 	game.inventory.copper = 40
 	game.inventory.scrap = 20
-	game.research("conveyor_speed")
+	game.research("turret_range")
 	game.hud._rebuild_tech_nodes()
 	check(not game.hud.tech_buttons.has("industry") and game.hud.tech_buttons.has("auto_scrap"), "Research prices do not reveal undiscovered materials")
 	game.add_resource("iron", 1)
@@ -125,7 +125,7 @@ func run() -> void:
 	game.hud._refresh_shortcuts()
 	check(game.hud.shortcuts_label.text == "Hold alt for info", "Releasing Alt hides the shortcut list again")
 	game.toggle_pause()
-	check(game.tutorial.central_message() == "Press space to pause", "Resuming after Alt is introduced still requests pausing")
+	check(game.tutorial.central_message() != "Press space to pause", "Opening research dismisses the pause reminder even after resuming")
 	game.tutorial.update_info_hover(3, true, "not-paused")
 	check(game.tutorial.info_hover_time == 0, "Inspection tutorial does not finish while the pause reminder is active")
 	game.toggle_pause()
@@ -172,6 +172,7 @@ func run() -> void:
 	game.free()
 	print("INSPECTION AND PAUSE FLOW CHECKS: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
 
 
 

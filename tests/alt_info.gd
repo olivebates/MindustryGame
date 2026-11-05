@@ -24,7 +24,7 @@ func run() -> void:
 	game.hud.set_process(false)
 	game.audio.muted = true
 	check(game.hud.tutorial_prompt.text == "Press and hold on an ore deposit.", "Mining prompt uses the new wording")
-	check(game.material_capacity("copper") == 40 and game.material_capacity("iron") == 500, "Copper starts capped at forty without reducing other minerals")
+	check(game.material_capacity("copper") == 40 and game.material_capacity("iron") == 40, "Copper and iron start capped at forty")
 	game.add_resource("copper", 4)
 	check(not game.hud.palette.visible, "Four copper does not reveal Structures")
 	game.add_resource("copper", 1)
@@ -49,13 +49,13 @@ func run() -> void:
 	game.add_resource("copper", 2)
 	game.place_building(Vector2i(21, 22), "belt", 0)
 	game.place_building(Vector2i(22, 22), "belt", 0)
-	check(game.tutorial.extractor_connected_once and game.tutorial.stage == game.tutorial.Stage.SOLAR, "First extractor connection permanently records the discount milestone")
+	check(game.tutorial.extractor_connected_once and game.tutorial.stage == game.tutorial.Stage.BELTS, "First extractor connection permanently records the discount milestone")
 	check(game.building_cost("belt", 100).copper > 1, "Normal belt inflation resumes after the first connection")
 	check(game.building_cost("drill").copper > 2, "Later extractors do not receive the first-build discount")
 	game.hud.refresh()
 	game.select_building("solar")
 	game.hud.refresh()
-	check(game.hud.tutorial_prompt.visible and game.hud.tutorial_prompt.text == "Wait for enough copper extraction.", "Opened Structures tutorial explains waiting for copper")
+	check(game.hud.tutorial_prompt.visible and game.hud.tutorial_prompt.text == "Mine some more ore.", "Opened Structures tutorial explains waiting for copper")
 	game.add_resource("copper", 10)
 	game.hud.refresh()
 	check(not game.hud.tutorial_prompt.visible, "Waiting prompt clears once the next tutorial structure is affordable")
@@ -72,6 +72,9 @@ func run() -> void:
 	right.button_index = MOUSE_BUTTON_RIGHT
 	right.pressed = true
 	right.position = game.get_canvas_transform() * game.cell_center(Vector2i(31, 22))
+	right.pressed = true
+	game._input(right)
+	right.pressed = false
 	game._input(right)
 	game._unhandled_input(right)
 	check(game.buildings.has(Vector2i(31, 22)) and not game.right_demolishing, "Repeated right clicks never destroy a structure")
@@ -89,6 +92,9 @@ func run() -> void:
 	game.begin_drag(Vector2i(31, 22))
 	check(not game.buildings.has(Vector2i(31, 22)), "Left click in demolition mode deletes the building")
 	game.finish_drag()
+	right.pressed = true
+	game._input(right)
+	right.pressed = false
 	game._input(right)
 	check(game.active_tool == "build", "Right click exits demolition mode")
 	game.hud._process(0)
@@ -109,7 +115,7 @@ func run() -> void:
 	check(game.tutorial.info_hover_time == 0, "Hover without Alt never completes the info tutorial")
 	alt(true)
 	game.hud._refresh_tooltip(Vector2(700, 400))
-	check(game.hud.tooltip.visible and game.hud.tooltip_body.text.contains("Health: 1990 / 2000") and game.hud.tooltip_body.text.contains("Copper capacity: 40"), "Alt on a placed core shows live health and storage stats")
+	check(game.hud.tooltip.visible and game.hud.tooltip_body.text.contains("Health: 1.99k / 2k") and game.hud.tooltip_body.text.contains("Defend at all costs.") and not game.hud.tooltip_body.text.contains("Copper capacity:"), "Alt on a placed core shows live health and storage stats")
 	game.tutorial.update_info_hover(0.8, game.hud.tooltip.visible)
 	alt(false)
 	game.hud._refresh_tooltip()
@@ -160,6 +166,11 @@ func run() -> void:
 	game.free()
 	print("ALT INFO AND DEMOLITION CHECKS: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
+
+
+
 
 
 

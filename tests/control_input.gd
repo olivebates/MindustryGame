@@ -81,7 +81,7 @@ func run() -> void:
 	check(game.inventory.copper == 3, "Repeated short clicks cannot accumulate a mining reward")
 	game.update_manual_mining(0.6, iron, true)
 	check(game.inventory.iron == 0 and is_equal_approx(game.manual_mining_progress, 0.6), "Changing ore targets restarts the mining interval")
-	game.update_manual_mining(0.4, iron, true)
+	game.update_manual_mining(4.4, iron, true)
 	check(game.inventory.iron == 1, "Manual mining yields the targeted iron resource")
 	game.update_manual_mining(1, verdite, true)
 	check(game.inventory.verdite == 1, "Manual mining also supports green verdite")
@@ -122,6 +122,8 @@ func run() -> void:
 	print("CONTROL AND MINING CHECKS: %d passed, %d failed" % [checks - failures, failures])
 	game.free()
 	quit(0 if failures == 0 else 1)
+
+
 
 
 

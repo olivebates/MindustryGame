@@ -59,11 +59,8 @@ func run() -> void:
 	check(game.hud.pause_button.visible and game.hud.tech_button.visible and game.hud.wave_controls.visible, "Rollback keeps previously revealed controls visible")
 	check(game.saves.restore(1) and game.wave == 2 and game.hud.tech_button.visible and game.hud.category_buttons.Defence.visible, "Wave-two rollback also preserves revealed UI")
 	game.hud.save_browser.show_browser()
-	var row: Button = game.hud.save_browser.rows[0]
-	var stat_labels := 0
-	for child in row.get_children():
-		if child is Label and child.text.begins_with("x"): stat_labels += 1
-	check(stat_labels == 5 and row.get_meta("summary").enemies.heavy == 1, "Save rows show icon-times-count groups for structures, turrets, tech and enemy types")
+	var timeline_summary: Dictionary = game.saves.timeline_events()[0].summary
+	check(timeline_summary.enemies.heavy == 1 and game.hud.save_browser.strip.visible, "Checkpoint summaries and enemy previews remain available to timeline history")
 	game.hud.close_modal()
 	await process_frame
 	var rng_before: int = game.wave_rng.state
@@ -76,13 +73,13 @@ func run() -> void:
 	Input.flush_buffered_events()
 	game.hover_cell = Vector2i((gate.position / game.TILE).floor())
 	game.hud._refresh_tooltip(game.get_canvas_transform() * gate.position)
-	check(game.hud.tooltip.visible and game.hud.tooltip_title.text.contains("Wave 3") and game.hud.tooltip_body.get_parsed_text().contains("Enemies: 2"), "Alt hovering a spawn shows the next wave's statistics")
+	check(game.hud.tooltip.visible and game.hud.tooltip_title.text.contains("Wave 3") and game.hud.spawn_preview.visible and game.hud.spawn_preview.get_child_count() == 2, "Alt hovering a spawn shows the next wave's statistics")
 	alt.pressed = false
 	Input.parse_input_event(alt)
 	Input.flush_buffered_events()
 	game.paused = false
 	key(KEY_E)
-	check(game.speed == 3 and game.hud.speed_button.get_node("Hotkey").text == "E", "E controls speed and matches the button hint")
+	check(game.speed == 5 and game.hud.speed_button.get_node("Hotkey").text == "E", "E controls speed and matches the button hint")
 	key(KEY_Q)
 	game.advance_wave_warp(2.0)
 	check(game.wave == 3 and game.spawn_remaining == 2 and game.hud.next_button.get_node("Hotkey").text == "Q", "Q starts the forecast wave and matches the button hint")
@@ -109,4 +106,8 @@ func run() -> void:
 	print("COMBAT CHECKPOINT UI CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
+
+
+
 

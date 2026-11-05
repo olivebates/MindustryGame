@@ -35,7 +35,7 @@ func run() -> void:
 	check(ground.get_used_cells().size() == game.WIDTH * game.HEIGHT and not rocks.get_used_cells().is_empty() and not ores.get_used_cells().is_empty(), "Level contains saved, paintable ground, rock-wall and ore TileMapLayers")
 	check(game.rocks.size() == rocks.get_used_cells().size() and game.ores.size() == ores.get_used_cells().size(), "Runtime obstacles and resources are read from painted cells")
 	check(ores.tile_set.get_source_count() == 3 and ores.get_cell_tile_data(Vector2i(20, 22)).get_custom_data("resource") == "copper", "Ore atlas exposes copper, iron and verdite with resource metadata")
-	check(ores.tile_set.get_source(0).texture.get_size() == Vector2(32, 32), "Painted tile textures match the 32-pixel world grid")
+	check(ores.tile_set.get_source(0).texture.get_size() == Vector2.ONE * game.raster_tile_size and ores.scale * Vector2(ores.tile_set.tile_size) == Vector2(32, 32), "Zoom-specific painted tiles retain the 32-unit world grid")
 	var saved_bytes: PackedByteArray = FileAccess.get_file_as_bytes("res://scenes/sector.tscn")
 	game.simulate(100)
 	check(FileAccess.get_file_as_bytes("res://scenes/sector.tscn") == saved_bytes and game.rocks.size() == rocks.get_used_cells().size(), "Playing does not regenerate or overwrite the authored level")
@@ -51,6 +51,7 @@ func run() -> void:
 	reloaded.free()
 	fresh()
 	var progress = game.tutorial
+	game.ores[Vector2i(18, 22)] = "copper" # Controlled mining fixture; the authored ore map is editable.
 	check(game.inventory.copper == 0 and game.inventory.iron == 0 and game.buildings.size() == 1 and game.buildings[game.current_core].kind == "core", "Tutorial starts with an empty inventory and only a core")
 	check(game.hud.tutorial_prompt.visible and game.hud.tutorial_prompt.text == "Press and hold on an ore deposit.", "Initial screen shows the requested mining prompt")
 	check(not game.hud.palette.visible and not game.hud.inventory_panel.visible and not game.hud.map_panel.visible and not game.hud.wave_controls.visible and not game.hud.wave_label.visible, "All normal GUI is hidden before the first resource")
@@ -102,6 +103,7 @@ func run() -> void:
 	game.begin_drag(Vector2i(21, 22))
 	game.extend_drag(game.current_core)
 	game.finish_drag()
+	game.add_resource("copper", 10)
 	progress.check_connection()
 	check(progress.has_extractor_connection() and progress.stage == progress.Stage.SOLAR, "A correctly directed extractor-to-core line unlocks the solar turret")
 	check(game.unlocked("solar") and game.hud.category_buttons.Structures.get_meta("tutorial_glow"), "Solar unlock restarts the Structures glow")
@@ -130,7 +132,7 @@ func run() -> void:
 	q.keycode = KEY_E
 	q.pressed = true
 	game._unhandled_input(q)
-	check(game.speed == 3, "Q changes x1 directly to x3")
+	check(game.speed == 5, "E changes x1 directly to x5")
 	game._unhandled_input(q)
 	check(game.speed == 1, "Q changes x3 directly back to x1")
 	game.hud.next_button.pressed.emit()
@@ -155,7 +157,7 @@ func run() -> void:
 	check(progress.tech_available and game.hud.tech_button.visible and game.hud.tech_button.get_meta("tutorial_glow"), "Tutorial scrap collection reveals a glowing tech-tree button")
 	game.hud.show_tech_tree()
 	check(progress.tech_opened and not game.hud.tech_button.get_meta("tutorial_glow"), "Opening research stops the tech-tree button glow")
-	check(game.hud.tech_buttons.size() == 1 and game.hud.tech_buttons.has("barriers") and game.TECH.barriers.cost == {"scrap": 3, "copper": 20}, "First research frontier contains Barriers for three scrap and twenty copper")
+	check(game.hud.tech_buttons.size() == 1 and game.hud.tech_buttons.has("barriers") and game.TECH.barriers.cost == {"scrap": 3}, "First research frontier contains Barriers for three scrap and twenty copper")
 	check(game.hud.tech_buttons.barriers.button.get_meta("tutorial_glow"), "Barriers glows until researched")
 	game.add_resource("scrap", 3)
 	game.add_resource("copper", 20)
@@ -164,12 +166,12 @@ func run() -> void:
 	game.hud.tech_buttons.barriers.button.pressed.emit()
 	check(game.researched.has("barriers") and game.inventory.scrap == before - 3 and game.unlocked("wall"), "Barriers research charges three scrap and unlocks walls")
 	check(not game.hud.tech_buttons.barriers.button.get_meta("tutorial_glow"), "Researching Barriers ends its glow")
-	check(game.hud.tech_buttons.has("conveyor_speed") and game.hud.tech_buttons.has("turret_range") and not game.hud.tech_buttons.has("repeater") and not game.hud.tech_buttons.has("cannon"), "Tech tree reveals immediate successors and hides deeper upgrades")
+	check(not game.hud.tech_buttons.has("conveyor_speed") and game.hud.tech_buttons.has("turret_range") and not game.hud.tech_buttons.has("repeater") and not game.hud.tech_buttons.has("cannon"), "Tech tree reveals immediate successors and hides deeper upgrades")
 	game.hud.close_modal()
 	fresh()
 	game.ores[Vector2i(23, 27)] = "iron"
 	game.ores[Vector2i(23, 26)] = "iron"
-	game.update_manual_mining(5, Vector2i(23, 27), true)
+	game.update_manual_mining(25, Vector2i(23, 27), true)
 	check(game.tutorial.stage == game.tutorial.Stage.FUNDS and not game.unlocked("drill"), "Iron does not bypass the five-copper tutorial threshold")
 	game.add_resource("copper", 10)
 	game.pay({"copper": 10})
@@ -210,11 +212,11 @@ func run() -> void:
 	opponent.max_hp = 100.0
 	game.enemies.append(opponent)
 	game._update_turret(game.current_core + Vector2i(8, 0), solar, 0)
-	check(solar.ammo == 0 and opponent.hp == 97.0 and game.BUILDINGS.solar.reload == 0.6, "Solar turret shoots for three damage with no ammunition and a 0.6-second cooldown")
+	check(solar.ammo == 0 and opponent.hp == 98.0 and game.BUILDINGS.solar.reload == 0.6, "Solar turret shoots for two damage with no ammunition and a 0.6-second cooldown")
 	game._update_turret(game.current_core + Vector2i(8, 0), solar, 0.59)
-	check(opponent.hp == 97.0, "Solar turret cannot fire early")
+	check(opponent.hp == 98.0, "Solar turret cannot fire early")
 	game._update_turret(game.current_core + Vector2i(8, 0), solar, 0.011)
-	check(opponent.hp == 94.0 and solar.ammo == 0, "Solar turret fires again without consuming resources")
+	check(opponent.hp == 96.0 and solar.ammo == 0, "Solar turret fires again without consuming resources")
 	check(not game.can_receive(game.current_core + Vector2i(8, 0), "copper") and not game.can_receive(game.current_core + Vector2i(8, 0), "iron"), "Solar turret never accepts ammunition from a conveyor")
 	fresh(true)
 	game._input(shift_p())
@@ -224,6 +226,13 @@ func run() -> void:
 	print("TUTORIAL AND EDITOR CHECKS: %d passed, %d failed" % [checks - failures, failures])
 	game.free()
 	quit(0 if failures == 0 else 1)
+
+
+
+
+
+
+
 
 
 

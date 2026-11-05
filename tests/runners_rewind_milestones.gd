@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 var passed := 0
 var failed := 0
 func _initialize() -> void: call_deferred("run")
@@ -21,6 +21,7 @@ func run() -> void:
 	var position: Vector2 = game.cell_center(turret + Vector2i(1, 0))
 	check(game.enemy_navigation.route(game, position).target == turret and game.enemy_navigation.route(game, position, true).target == game.current_core, "Runners bypass a nearby turret while other enemies target it")
 	var runner: Dictionary = game.create_enemy("runner", position, "red")
+	runner.hp = 100.0
 	runner.windup = 0.0
 	runner.cooldown = 0.0
 	game.enemies.append(runner)
@@ -80,3 +81,4 @@ func run() -> void:
 	print("RUNNER REWIND MILESTONE CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+

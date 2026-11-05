@@ -1,20 +1,21 @@
 ﻿extends RefCounted
 ## Compact wave checkpoints; future history is removed only on resume.
-const VERSION := 9
+const VERSION := 10
 const FIELDS := ["inventory", "researched", "discovered_resources", "wave", "wave_timer", "kills", "delivered", "elapsed", "speed", "current_core", "cores", "placement_counts", "base_material_capacity", "core_health", "won", "lost", "victory_shown", "current_wave_color", "next_wave_color", "debug_unlock_step", "debug_resource_capacity", "base_copper_capacity", "enemies", "spawn_queue", "spawn_remaining", "spawn_timer", "wave_in_progress", "pending_waves"]
-const TUTORIAL_FIELDS := ["stage", "menu_clicked", "building_clicked", "extractors_ever_built", "turrets_ever_built", "waves_started", "tech_available", "tech_opened", "skipped", "paused_once", "second_wave_elapsed", "extractor_connected_once", "structures_opened_once", "first_damage_taken", "info_hover_time", "collected_tutorial_scrap", "barrier_tree_closed", "inspected_things", "first_wave_completed", "speed_toggled", "designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "demolish_entered", "demolish_completed", "onboarding_completed", "category_visits", "pause_exit_completed", "introduced_shortcuts", "ui_revealed", "next_core_target", "next_core_stage"]
+const TUTORIAL_FIELDS := ["stage", "menu_clicked", "building_clicked", "extractors_ever_built", "turrets_ever_built", "waves_started", "tech_available", "tech_opened", "skipped", "paused_once", "second_wave_elapsed", "extractor_connected_once", "structures_opened_once", "first_damage_taken", "info_hover_time", "collected_tutorial_scrap", "barrier_tree_closed", "inspected_things", "first_wave_completed", "speed_toggled", "designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "demolish_entered", "demolish_completed", "onboarding_completed", "category_visits", "pause_exit_completed", "introduced_shortcuts", "ui_revealed", "next_core_target", "next_core_stage", "ammo_tutorial_target", "ammo_tutorial_stage"]
 const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color"]
 var game: Node2D
 var directory := "user://wave_saves"
 var entries: Array[Dictionary] = []
 var current := -1
+var initial_checkpoint: Array = []
 var pending_branch := false
 var last_error := ""
 var learning_directory := ""
 var learned_progress: Dictionary = {}
 var learned_resources: Dictionary = {}
 var learning_hash := 0
-const WORLD_TUTORIAL_FIELDS := ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target"]
+const WORLD_TUTORIAL_FIELDS := ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target", "ammo_tutorial_target"]
 func merge_learning(destination: Dictionary, incoming: Dictionary) -> void:
 	for key in incoming:
 		var value = incoming[key]
@@ -122,11 +123,14 @@ func snapshot() -> Array:
 	for field in TUTORIAL_FIELDS: progress.append(game.tutorial.get(field))
 	var gates: Array = []
 	for gate in game.spawners: gates.append([gate.waves_completed, gate.converted, gate.prepared_color])
-	return [VERSION, values, rows, progress, gates, game.scraps.duplicate(true), game.camera.position, game.camera.zoom, game.rng.state, game.wave_rng.state]
-func capture() -> bool:
+	var camera_position: Vector2 = game.capture_effect.camera_target() if is_instance_valid(game.capture_effect) and game.capture_effect.active else game.camera.position
+	return [VERSION, values, rows, progress, gates, game.scraps.duplicate(true), camera_position, game.camera.zoom, game.rng.state, game.wave_rng.state]
+func capture(checkpoint: Array = []) -> bool:
 	if pending_branch: return false
 	last_error = ""
-	var raw := var_to_bytes(snapshot())
+	var data: Array = snapshot() if checkpoint.is_empty() else checkpoint
+	var saved_wave: int = maxi(1, data[1][3])
+	var raw := var_to_bytes(data)
 	var packed := PackedByteArray()
 	var mode := FileAccess.COMPRESSION_ZSTD
 	for candidate in [FileAccess.COMPRESSION_ZSTD, FileAccess.COMPRESSION_DEFLATE, FileAccess.COMPRESSION_GZIP]:
@@ -138,7 +142,7 @@ func capture() -> bool:
 		last_error = "Could not create save directory: " + directory
 		return false
 	var stamp := int(Time.get_unix_time_from_system())
-	var name := "%06d_%03d_%d.ews" % [entries.size(), game.wave, stamp]
+	var name := "%06d_%03d_%d.ews" % [entries.size(), saved_wave, stamp]
 	var file := FileAccess.open(directory.path_join(name + ".tmp"), FileAccess.WRITE)
 	if file == null:
 		last_error = "Could not write wave save."
@@ -152,9 +156,9 @@ func capture() -> bool:
 	if DirAccess.rename_absolute(directory.path_join(name + ".tmp"), directory.path_join(name)) != OK:
 		last_error = "Could not finish wave save."
 		return false
-	entries.append({"file": name, "wave": game.wave, "time": stamp})
+	entries.append({"file": name, "wave": saved_wave, "time": stamp})
 	current = entries.size() - 1
-	capture_preview(name)
+	capture_preview(name, data)
 	return true
 
 func preview_path(name: String) -> String:
@@ -175,6 +179,7 @@ func capture_preview(name: String, data: Array = []) -> void:
 	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var drawing := Node2D.new()
 	drawing.set_script(load("res://scripts/save_preview.gd"))
+	drawing.material = game.material
 	drawing.configure(game, data)
 	var view_scale: float = 256.0 / (41.0 * game.TILE)
 	drawing.scale = Vector2.ONE * view_scale
@@ -250,6 +255,19 @@ func load_snapshot(index: int) -> Array:
 		data[0] = 8
 	if data[0] == 8:
 		data[3].append_array([game.INVALID, 0])
+		data[0] = 9
+	if data[0] == 9:
+		data[3].append_array([game.INVALID, 0])
+		var piles: Array = []
+		for scrap in data[5]:
+			for value in preload("res://scripts/scrap_tiers.gd").split(scrap.amount):
+				var piece: Dictionary = scrap.duplicate(true)
+				piece.amount = value
+				piece.value = value
+				piece.origin = piece.pos
+				piece.velocity = Vector2.ZERO
+				piles.append(piece)
+		data[5] = piles
 		data[0] = VERSION
 	if data[0] != VERSION: return []
 	if data[1].size() != FIELDS.size() or data[3].size() != TUTORIAL_FIELDS.size() or data[4].size() != game.spawners.size(): return []
@@ -264,15 +282,17 @@ func restore(index: int) -> bool:
 		return false
 	remember_learning()
 	var rewind_frame: Dictionary = game.hud.capture_rewind_frame()
+	if is_instance_valid(game.capture_effect): game.capture_effect.cancel()
 	var known_resources: Dictionary = game.discovered_resources.duplicate()
 	var learned: Dictionary = {}
 	for field in TUTORIAL_FIELDS:
 		var value = game.tutorial.get(field)
 		learned[field] = value.duplicate(true) if value is Dictionary else value
-	game.cancel_build_selection()
+	game.cancel_build_selection(false)
 	game.buildings.clear()
 	game.occupied.clear()
 	for i in FIELDS.size(): game.set(FIELDS[i], data[1][i])
+	game.speed = 5 if game.speed > 1 else 1
 	game.discovered_resources.merge(known_resources, true)
 	game.placement_counts.clear()
 	for row in data[2]:
@@ -282,7 +302,7 @@ func restore(index: int) -> bool:
 	for i in TUTORIAL_FIELDS.size(): game.tutorial.set(TUTORIAL_FIELDS[i], data[3][i])
 	# Learning belongs to the player, rather than to a checkpoint's world state.
 	for field in TUTORIAL_FIELDS:
-		if field in ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target"]: continue
+		if field in ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target", "ammo_tutorial_target"]: continue
 		var previous = learned[field]
 		var restored = game.tutorial.get(field)
 		if previous is bool: game.tutorial.set(field, previous or restored)
@@ -301,7 +321,7 @@ func restore(index: int) -> bool:
 	game.cancel_wave_warp()
 	game.scraps.assign(data[5])
 	game.camera.position = data[6]
-	game.camera.zoom = data[7]
+	game.set_camera_zoom(float(data[7].x))
 	game.rng.state = data[8]
 	game.wave_rng.state = data[9]
 	game.shots.clear()
@@ -310,6 +330,7 @@ func restore(index: int) -> bool:
 	game.notice_time = 0
 	game.inspected = game.INVALID
 	game.tutorial.guide_dirty = true
+	game.tutorial.refresh_ammo_guide()
 	game._activate_spawners()
 	game.enemy_navigation.invalidate(game)
 	for enemy in game.enemies: game.enemy_info_counter = maxi(game.enemy_info_counter, int(enemy.get("info_id", 0)))
@@ -318,6 +339,7 @@ func restore(index: int) -> bool:
 	game.rollback_paused = true
 	current = index
 	pending_branch = index < entries.size() - 1
+	if game.cores.size() == 2: game.tutorial.ui_revealed.slugger_rewind_hint = true
 	game.hud.research_signature = -1
 	game.hud.refresh()
 	game.hud.play_rewind_effect(rewind_frame)
@@ -378,6 +400,8 @@ func checksum(bytes: PackedByteArray) -> PackedByteArray:
 func write_active_directory() -> void:
 	var file := FileAccess.open("user://active_expedition", FileAccess.WRITE)
 	if file != null: file.store_string(directory.get_file())
+
+
 
 
 

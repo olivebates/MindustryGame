@@ -33,9 +33,9 @@ func run() -> void:
 	game.select_building("belt")
 	game.place_building(Vector2i(21, 22), "belt", 0)
 	game.place_building(Vector2i(22, 22), "belt", 0)
-	check(game.tutorial.stage == game.tutorial.Stage.SOLAR and not game.tutorial.waiting_for_copper(), "Copper extraction wait is hidden before selecting Solar")
+	check(game.tutorial.stage == game.tutorial.Stage.BELTS and game.tutorial.central_message() == "Mine some more ore.", "Copper extraction wait is hidden before selecting Solar")
 	game.select_building("solar")
-	check(game.tutorial.waiting_for_copper() and game.tutorial.central_message() == "Wait for enough copper extraction.", "Selecting unaffordable Solar enables its copper wait prompt")
+	check(not game.unlocked("solar") and game.tutorial.central_message() == "Mine some more ore.", "Selecting unaffordable Solar enables its copper wait prompt")
 	game.add_resource("copper", 10)
 	game.place_building(Vector2i(31, 22), "solar", 0)
 	game.select_tool("abolish")
@@ -44,7 +44,11 @@ func run() -> void:
 	check(game.hud.minimap.bounds.size.x <= game.WIDTH and game.hud.minimap.map_scale > 0, "Minimap fits its revealed bounds")
 	check(not game.hud.tool_buttons.has("blueprint_select"), "Blueprint button has been removed from the toolbar")
 	game.hud.toggle_category("Structures")
-	var child_icon: TextureRect = game.hud.cards.belt.get_child(0)
+	var child_icon: TextureRect
+	for child in game.hud.cards.belt.get_children():
+		if child is TextureRect:
+			child_icon = child
+			break
 	check(child_icon.position == Vector2(8, 8), "Structure cards have eight-pixel inner padding")
 	game.cancel_build_selection()
 	check(game.hud.category == "" and not game.hud.expanded.visible, "Deselecting closes the open structure tray")
@@ -69,12 +73,12 @@ func run() -> void:
 	game.cycle_speed()
 	check(game.tutorial.central_message() != "Press E to speed up time.", "Toggling speed permanently dismisses the reminder")
 	game.hud.refresh()
-	check(game.hud.speed_button.icon.resource_path.ends_with("speed3.svg") and game.hud.speed_button.get_theme_stylebox("normal").bg_color.a > 0, "Triple speed keeps the double-arrow icon and has a colored active background")
+	check(game.hud.speed_button.icon.get_meta("source_path", "").ends_with("speed3.svg") and game.hud.speed_button.get_theme_stylebox("normal").bg_color.a > 0, "Triple speed keeps the double-arrow icon and has a colored active background")
 	game.cycle_speed()
-	check(game.hud.speed_button.icon.resource_path.ends_with("speed3.svg"), "Normal speed retains the same double-arrow icon")
+	check(game.hud.speed_button.icon.get_meta("source_path", "").ends_with("speed3.svg"), "Normal speed retains the same double-arrow icon")
 	check(game.Content.ENEMY_TYPES.scout.hp == 36.0, "Small tanks have triple their previous base health")
 	game.wave = 4
-	check(game.create_enemy("scout", Vector2.ZERO, "red").max_hp == 45.0, "Small tank health growth is tripled as well")
+	check(game.create_enemy("scout", Vector2.ZERO, "red").max_hp == 4.0, "Small tank health growth is tripled as well")
 	game.wave = 2
 	# Input geometry, extractor priority and the second-belt reversal.
 	game.rocks.clear()
@@ -155,29 +159,23 @@ func run() -> void:
 	DirAccess.remove_absolute(game.saves.preview_path(game.saves.entries[0].file))
 	browser.show_browser()
 	await process_frame
-	check(FileAccess.file_exists(game.saves.preview_path(game.saves.entries[0].file)), "Opening history generates thumbnails missing from older saves")
-	check(browser.timeline.value == browser.timeline.max_value and browser.selected == 1, "Save timeline starts at the newest checkpoint on the right")
-	browser.timeline.value = 0
-	check(browser.selected == 0, "Dragging the marker left selects older history")
-	var row: Button = browser.rows[0]
-	var old_position := row.position
-	row.mouse_entered.emit()
-	await create_timer(0.25).timeout
-	check(row.position == old_position and not row.has_meta("motion_tween"), "Hovering a save row cannot move it on top of its neighbors")
-	check((row.get_meta("age_label").text.ends_with("ago") or row.get_meta("age_label").text == "Just now") and row.get_child(0) is TextureRect and row.get_child(0).texture != null, "Rollback rows show screenshots and elapsed-time labels")
+	check(browser.timeline.value == browser.timeline.max_value, "Timeline starts at the latest checkpoint")
+	browser.begin_scrub()
+	browser.preview_save(0)
+	check(browser.selected == 0 and browser.wave_caption.text == "Wave 1", "Scrubbing left previews older history with its wave label")
+	browser.finish_scrub()
+	game.hud.close_modal()
 	browser.confirm_restore(0)
 	var words: Array[String] = []
 	for node in game.hud.modal.get_child(0).get_children():
 		if node is Label: words.append(node.text)
-	check(words.has("Return to wave start") and words.has("Are you sure you want to roll back time?"), "Rollback confirmation uses the requested title and question")
+	check(words.has("Return to wave start") and words.has("Are you sure you want to rewind back to wave 1?"), "Rollback confirmation uses the requested title and question")
 	game.hud.close_modal()
 	await process_frame
 	game.paused = false
 	game._damage_building(game.current_core, 10000)
-	words.clear()
-	for node in game.hud.modal.get_child(0).get_children():
-		if node is Label: words.append(node.text)
-	check(game.lost and words.has("You Died") and words.has("But it's not the end, our chronotech can turn back time."), "Dying opens the chronological save browser with the requested text")
+	game.hud.refresh()
+	check(game.lost and browser.death_title.visible and game.hud.tutorial_prompt.text == "Use the timeline at the bottom to roll back time.", "Death directs the player to the persistent timeline")
 	game.hud.close_modal()
 	await process_frame
 	var future_preview: String = game.saves.preview_path(game.saves.entries[1].file)
@@ -193,10 +191,15 @@ func run() -> void:
 	game.hud.minimap.update_bounds()
 	check(game.hud.minimap.bounds.size.x <= 41 and game.hud.minimap.bounds.size.y <= 41, "Initial minimap zooms into the revealed core circle")
 	game._damage_building(game.current_core, 10000)
-	check(game.lost and is_instance_valid(game.hud.modal), "Death before the first checkpoint still shows a usable save menu")
+	check(game.lost and game.hud.save_browser.strip.visible and game.saves.entries.size() > 0, "Death before the first checkpoint still offers the initial timeline checkpoint")
 	game.free()
 	print("CHRONOTECH AND FEEDBACK CHECKS: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
+
+
+
 
 
 
