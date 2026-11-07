@@ -1,4 +1,4 @@
-extends ScrollContainer
+﻿extends ScrollContainer
 var graph: Control
 var canvas: Control
 var bounds := Rect2(Vector2.ZERO, Vector2.ONE)
@@ -49,7 +49,7 @@ func clear_button_presses(node: Node) -> void:
 	for child in node.get_children(): clear_button_presses(child)
 func configure(content: Control, region: Rect2) -> void:
 	graph = content
-	bounds = region
+	bounds = region.grow(maxf(size.x, size.y) / (2 * zoom))
 	if canvas == null:
 		canvas = Control.new()
 		canvas.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -60,11 +60,19 @@ func configure(content: Control, region: Rect2) -> void:
 func layout_graph() -> void:
 	if graph == null: return
 	var extent := bounds.size * zoom
-	canvas.custom_minimum_size = extent.max(size - Vector2(16, 16))
+	canvas.custom_minimum_size = extent.max(size)
 	graph.scale = Vector2.ONE * zoom
-	graph.position = -bounds.position * zoom + ((size - Vector2(16, 16)) - extent).max(Vector2.ZERO) / 2
-	scroll_horizontal = clampi(scroll_horizontal, 0, maxi(0, ceili(extent.x - size.x + 16)))
-	scroll_vertical = clampi(scroll_vertical, 0, maxi(0, ceili(extent.y - size.y + 16)))
+	graph.position = -bounds.position * zoom + ((size) - extent).max(Vector2.ZERO) / 2
+	scroll_horizontal = clampi(scroll_horizontal, 0, maxi(0, ceili(extent.x - size.x)))
+	scroll_vertical = clampi(scroll_vertical, 0, maxi(0, ceili(extent.y - size.y)))
+func center_on_tech(point: Vector2) -> void:
+	await get_tree().process_frame
+	if not is_inside_tree(): return
+	layout_graph()
+	var offset := point * zoom + graph.position - size / 2
+	scroll_horizontal = roundi(offset.x)
+	scroll_vertical = roundi(offset.y)
+	layout_graph()
 func zoom_at(factor: float, point: Vector2) -> void:
 	if graph == null: return
 	var before := (point + Vector2(scroll_horizontal, scroll_vertical) - graph.position) / zoom
@@ -95,3 +103,4 @@ func _gui_input(event: InputEvent) -> void:
 		scroll_vertical += roundi(event.delta.y * 24)
 		layout_graph()
 		accept_event()
+

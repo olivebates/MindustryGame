@@ -15,6 +15,11 @@ var banner: Label
 var pan_started := false
 var pan_cancelled := false
 var pan_from := Vector2.ZERO
+var pan_points: Array[Vector2] = []
+var zoom_from := 2.0
+const GATE_HOLD := 0.4
+func tour_duration() -> float:
+	return maxi(1, pan_points.size() - 1) * PAN_DURATION + maxi(0, pan_points.size() - 2) * GATE_HOLD
 func _ready() -> void:
 	z_index = 202
 	material = game.material
@@ -40,6 +45,7 @@ func begin(cell: Vector2i) -> void:
 	reveal_extent = game.TILE * 20
 	pan_started = false
 	pan_cancelled = false
+	pan_points.clear()
 	banner.modulate.a = 0
 	banner.show()
 	game.play_sound("core_capture")
@@ -66,12 +72,22 @@ func advance(dt: float) -> void:
 	if time >= BANNER_DURATION and not pan_cancelled:
 		if not pan_started:
 			pan_from = game.camera.position
+			zoom_from = game.camera.zoom.x
+			game.set_camera_zoom(1.0)
+			game.camera.zoom = Vector2.ONE * zoom_from
+			pan_points.append(pan_from)
+			pan_points.append(camera_target())
 			pan_started = true
-		var blend := clampf((time - BANNER_DURATION) / PAN_DURATION, 0, 1)
-		blend = blend * blend * (3.0 - 2.0 * blend)
-		game.camera.position = (pan_from.lerp(camera_target(), blend) * game.camera.zoom).round() / game.camera.zoom
+		var elapsed := time - BANNER_DURATION
+		game.camera.zoom = Vector2.ONE * lerpf(zoom_from, 1.0, smoothstep(0, 0.8, elapsed))
+		var remaining := elapsed
+		for segment in range(1, pan_points.size()):
+			var blend := smoothstep(0, PAN_DURATION, remaining)
+			game.camera.position = (pan_points[segment - 1].lerp(pan_points[segment], blend) * game.camera.zoom).round() / game.camera.zoom
+			if remaining <= PAN_DURATION + GATE_HOLD or segment == pan_points.size() - 1: break
+			remaining -= PAN_DURATION + GATE_HOLD
 		game.camera.force_update_scroll()
-	if progress >= 1 and time >= BANNER_DURATION + PAN_DURATION:
+	if progress >= 1 and time >= BANNER_DURATION + tour_duration():
 		active = false
 		old_visibility.clear()
 		banner.hide()

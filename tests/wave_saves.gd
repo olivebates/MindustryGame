@@ -100,6 +100,10 @@ func run() -> void:
 	for resource in game.inventory: full = full and game.inventory[resource] == 10000 and (resource == "scrap" or game.material_capacity(resource) == 10000)
 	check(full, "Shift+Z+L fills every resource and gives capped materials ten thousand capacity")
 	# Exercise fair extractor routing on all four outputs and under back pressure.
+	game.enemies.clear()
+	game.spawn_queue.clear()
+	game.spawn_remaining = 0
+	game.activate_pending_buildings()
 	var center := Vector2i(15, 20)
 	game.ores[center] = "copper"
 	game._add_building(center, "drill", 0)
@@ -121,7 +125,10 @@ func run() -> void:
 	drill.item = "copper"
 	game._update_items(0.1)
 	check(drill.item == "copper" and game.output_target(center, drill) != center + game.DIRS[drill.next_output], "Extractor waits for its turn under output back pressure")
-	# Save actual post-wave state, including production, research, gates and salvage.
+	# Exercise explicit snapshot serialization independently of auto-save scheduling.
+	game.saves.entries.clear()
+	game.saves.current = -1
+	game.saves.pending_branch = false
 	game.enemies.clear()
 	game.spawn_queue.clear()
 	game.spawn_remaining = 0
@@ -129,8 +136,9 @@ func run() -> void:
 	game.wave = 1
 	game.scraps.append({"pos": Vector2(100, 200), "amount": 12, "magnetized": true})
 	game._complete_wave()
+	game.saves.capture()
 	print("SAVE STATUS: ", game.saves.directory, " ", game.saves.last_error)
-	check(game.saves.entries.size() == 1 and FileAccess.file_exists(game.saves.directory.path_join(game.saves.entries[0].file)), "Wave completion writes a persistent checkpoint")
+	check(game.saves.entries.size() == 1 and FileAccess.file_exists(game.saves.directory.path_join(game.saves.entries[0].file)), "Explicit save writes a persistent checkpoint")
 	var original: Array = game.saves.snapshot().duplicate(true)
 	var raw_size := var_to_bytes(original).size()
 	var save_size := FileAccess.get_file_as_bytes(game.saves.directory.path_join(game.saves.entries[0].file)).size()
@@ -141,10 +149,12 @@ func run() -> void:
 	game.wave = 2
 	game.inventory.copper = 123
 	game._complete_wave()
+	game.saves.capture()
 	game.wave = 3
 	game.inventory.copper = 456
 	game._complete_wave()
-	check(game.saves.entries.size() == 3, "Each completed wave adds one checkpoint")
+	game.saves.capture()
+	check(game.saves.entries.size() == 3, "Each explicit capture adds one checkpoint")
 	var history = load("res://scripts/wave_saves.gd").new(game)
 	history.directory = game.saves.directory
 	history.read_index()
@@ -159,7 +169,7 @@ func run() -> void:
 	check(game.saves.restore(0) and game.tutorial.info_hover_time == 2.0 and game.tutorial.pause_exit_completed and game.tutorial.speed_toggled and game.tutorial.inspected_things.size() == 3, "Rollback preserves lessons already learned after an older checkpoint")
 	check(game.saves.entries.size() == 3 and game.saves.pending_branch, "Restoring retains future saves while paused")
 	game.hud.save_browser.show_browser()
-	check(game.hud.save_browser.strip.visible and not game.hud.saves_button.visible, "Persistent timeline replaces the save browser")
+	check(not game.hud.save_browser.strip.visible and game.hud.saves_button.visible and is_instance_valid(game.hud.modal), "Save browser replaces the persistent timeline")
 	check(game.hud.save_browser.timeline.max_value == 2, "Timeline has all three checkpoints")
 	game.hud.save_browser.begin_scrub()
 	game.hud.save_browser.preview_save(0)
@@ -185,6 +195,7 @@ func run() -> void:
 	Input.flush_buffered_events()
 	game.wave = 2
 	game._complete_wave()
+	game.saves.capture()
 	check(game.saves.entries.size() == 2 and game.saves.entries[1].wave == 2, "New waves append to the restored branch")
 	var corrupt_path: String = game.saves.directory.path_join(game.saves.entries[1].file)
 	var file := FileAccess.open(corrupt_path, FileAccess.READ_WRITE)

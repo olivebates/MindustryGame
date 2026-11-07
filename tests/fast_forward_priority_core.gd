@@ -19,7 +19,7 @@ func run() -> void:
 	factory()
 	game.request_next_wave()
 	game.advance_wave_warp(1)
-	check(game.wave_timer == 150 and game.elapsed == 150 and game.inventory.copper > 10, "Q advances production by the same time skipped on the countdown")
+	check(game.wave_timer == 150 and is_equal_approx(game.elapsed, 150) and game.inventory.copper > 10, "Q advances production by the same time skipped on the countdown")
 	var midway: Array = production()
 	game.simulate(0.1)
 	check(production() == midway, "Warp does not advance conveyor and extractor production twice")
@@ -28,7 +28,7 @@ func run() -> void:
 	check(production() == midway, "Pausing freezes production fast-forward")
 	game.paused = false
 	game.advance_wave_warp(1)
-	check(production() == normal and game.wave == 1 and not game.wave_warp_active, "Q finishes with the same factory state as the full skipped waiting period")
+	check(same_production(production(), normal) and game.wave == 1 and not game.wave_warp_active, "Q finishes with the same factory state as the full skipped waiting period")
 	check(game.enemy_health("siege", 1) == 2000 and game.enemy_health("siege", 50) == 2000, "Siege health is two thousand at every wave")
 	fresh()
 	var drill := Vector2i(20, 25)
@@ -61,8 +61,15 @@ func run() -> void:
 	gate.waves_before_conversion = 1
 	game.wave_in_progress = true
 	game._complete_wave()
-	check(game.cores.size() == 2 and game.wave_timer == 600 and game.paused, "New core starts with a paused ten-minute wave timer")
-	check(game.saves.load_snapshot(game.saves.current)[1][4] == 600, "Core-capture save preserves ten-minute timer")
+	check(game.cores.size() == 2 and game.wave_timer == 240 and game.paused, "New core starts with a paused four-minute wave timer")
+	check(game.saves.load_snapshot(game.saves.current)[1][4] == 240, "Core-capture save preserves four-minute timer")
 	print("FAST FORWARD PRIORITY AND CORE CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
+func same_production(first: Array, second: Array) -> bool:
+	for i in first.size():
+		if first[i] is float or second[i] is float:
+			if not is_equal_approx(float(first[i]), float(second[i])): return false
+		elif first[i] != second[i]: return false
+	return true

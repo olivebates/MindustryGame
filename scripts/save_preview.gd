@@ -5,7 +5,9 @@ var buildings: Dictionary = {}
 var textures: Dictionary = {}
 var terrain: Dictionary = {}
 var conveyor_upgraded := false
+var iron_barriers := false
 func configure(game: Node2D, snapshot: Array = []) -> void:
+	iron_barriers = game.researched.has("iron_barriers") if snapshot.is_empty() else snapshot[1][1].has("iron_barriers")
 	core = game.current_core if snapshot.is_empty() else snapshot[1][9]
 	conveyor_upgraded = game.researched.has("conveyor_speed") if snapshot.is_empty() else snapshot[1][1].has("conveyor_speed")
 	buildings = game.buildings.duplicate(true) if snapshot.is_empty() else {}
@@ -35,6 +37,19 @@ func snapshot_visible(game: Node2D, cell: Vector2i, snapshot: Array) -> bool:
 		var nearest := Geometry2D.get_closest_point_to_segment(point, game.cell_center(core), game.spawners[i].position)
 		if point.distance_to(nearest) <= game.TILE * 10: return true
 	return false
+
+func capture_bounds(game: Node2D) -> Rect2:
+	var center: Vector2 = game.cell_center(core)
+	var bounds := Rect2(center - Vector2.ONE * 22, Vector2.ONE * 44)
+	for cell in buildings:
+		var building: Dictionary = buildings[cell]
+		var size: int = 1 if building.kind == "core" else game.BUILDINGS[building.kind].size
+		var area := Rect2(Vector2(cell * game.TILE), Vector2.ONE * game.TILE * size)
+		if area.get_center().distance_to(center) <= game.core_build_radius * game.TILE:
+			bounds = bounds.merge(area)
+	bounds = bounds.grow(game.TILE * 2)
+	var side := maxf(bounds.size.x, bounds.size.y)
+	return Rect2(bounds.get_center() - Vector2.ONE * side / 2, Vector2.ONE * side)
 func _draw() -> void:
 	for cell in tiles:
 		var rect := Rect2(Vector2(cell * 32), Vector2(32, 32))
@@ -48,7 +63,11 @@ func _draw() -> void:
 		var center := Vector2(cell * 32) + Vector2.ONE * 16 * footprint
 		var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not conveyor_upgraded else textures[b.kind]
 		if b.kind == "solar": texture = textures.solar_base
+		if b.kind == "wall" and iron_barriers: texture = textures.wall_iron
 		if b.kind == "core" and cell != core: texture = textures.core_inactive
+		if b.get("pending", false):
+			preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(center - Vector2.ONE * dimension / 2, Vector2.ONE * dimension))
+			continue
 		var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
 		var flip := Vector2.ONE
 		if b.tunnel_role != "": texture = textures["tunnel_" + b.tunnel_role]
@@ -71,6 +90,8 @@ func _draw() -> void:
 		draw_set_transform(center, angle, flip)
 		draw_texture_rect(texture, Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false)
 		draw_set_transform(Vector2.ZERO)
+		if b.kind == "turret" and b.get("shield", false):
+			preload("res://scripts/drawing_style.gd").draw_shield(self, Rect2(center - Vector2.ONE * (dimension / 2 + 3), Vector2.ONE * (dimension + 6)), 1.0, line_width())
 		if b.kind in ["solar", "turret", "repeater", "cannon"]:
 			draw_rect(Rect2(Vector2(cell * 32) - Vector2.ONE, Vector2.ONE * (dimension + 2)), {"red": Color("f16e64"), "green": Color("83d780"), "blue": Color("7aa7f0")}[b.color], false, line_width())
 			draw_set_transform(center + Vector2(0, 2) if b.kind == "solar" else center, b.aim)

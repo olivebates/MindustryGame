@@ -1,7 +1,7 @@
 ﻿extends "res://tests/iron_supply_zoom.gd"
 func run() -> void:
 	fresh()
-	check(game.BUILDINGS.turret.damage == 50 and game.BUILDINGS.turret.reload == 4.0, "Slugger deals fifty damage every four seconds")
+	check(game.BUILDINGS.turret.damage == 50 and is_equal_approx(game.BUILDINGS.turret.reload, 0.8), "Slugger deals fifty damage every eight tenths of a second")
 	check(game.TECH.weapons.cost == {"iron": 5, "scrap": 70}, "Slugger research costs iron and scrap")
 	check(game.material_capacity("iron") == 40, "Starting iron capacity is forty")
 	check(not game.hud.build_hotkeys_available(), "Build hotkeys are unavailable before category split")
@@ -64,6 +64,7 @@ func run() -> void:
 	print("SPAWN AND SLUGGER CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
 
 
 

@@ -119,7 +119,7 @@ func run() -> void:
 	game._add_building(core + Vector2i.RIGHT, "belt", 0)
 	check(not game.core_should_glow(core), "Building in the core range ends its world/minimap glow")
 	game.inventory.copper = 0
-	check(game.building_cost("drill", 0, core + Vector2i.DOWN).iron == 8, "Iron substitution uses the core's iron price modifier")
+	check(game.building_cost("drill", 0, core + Vector2i.DOWN) == {"copper": 10}, "Core modifiers preserve copper cost even without enough copper")
 	fresh()
 	game.research("weapons", true)
 	var ore := Vector2i(19, 25)

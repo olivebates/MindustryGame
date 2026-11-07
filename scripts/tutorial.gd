@@ -1,4 +1,4 @@
-﻿extends Node2D
+extends Node2D
 ## Event-driven onboarding. Rendering uses authored tiles and never writes the level.
 enum Stage { MINE, FUNDS, EXTRACTOR, BELTS, SOLAR, READY }
 var game: Node2D
@@ -49,6 +49,8 @@ var guide_grid_builds := 0
 var ammo_path_queries := 0
 var drag_label: Label
 var introduced_shortcuts: Dictionary = {"LMB": true}
+var loss_save_glow := false
+var turret_loss_glow := false
 func _ready() -> void:
 	z_index = 210
 	material = game.material
@@ -237,7 +239,7 @@ func shortcut_lines() -> Array[String]:
 	if introduced_shortcuts.has("Z"): lines.append("Z — Clear conveyor")
 	if introduced_shortcuts.has("Q"): lines.append("Q — Start wave early")
 	if introduced_shortcuts.has("Space"): lines.append("Space — Pause / Resume")
-	if introduced_shortcuts.has("E"): lines.append("E — Speed")
+	if introduced_shortcuts.has("E") and game.researched.has("time_speed"): lines.append("E — Speed")
 	if introduced_shortcuts.has("Alt"): lines.append("Alt - Mouseover for info")
 	return lines
 
@@ -258,7 +260,7 @@ func connection_cost_remaining() -> int:
 func central_message() -> String:
 	var frontier_message := next_core_message()
 	if frontier_message != "": return frontier_message
-	if ammo_tutorial_stage in [1, 2] and game.buildings.has(ammo_tutorial_target): return "Some turrets require ammo.\nHold Alt over a turret to see its ammo type"
+	if ammo_tutorial_stage in [1, 2] and game.buildings.has(ammo_tutorial_target): return "Some turrets require ammo.\nHold Alt over a turret to see its ammo type\nBuild conveyor from extractor to turret."
 	if demolition_lesson_active():
 		if game.active_tool == "abolish":
 			return "Presss X to leave demolish mode." if misplaced_buildings.is_empty() else "Press on buildings to demolish them."
@@ -269,7 +271,7 @@ func central_message() -> String:
 	if stage < Stage.EXTRACTOR: return "Press and hold on an ore deposit."
 	if prewave_recovery_needed(): return "Right click to deselect" if game.selected != "" else "Mine some more ore."
 	if stage == Stage.BELTS and extractor_connected_once and has_extractor_connection() and not ui_revealed.get("solar_unlocked", false): return "Mine some more ore."
-	if game.wave >= 5 and not game.paused and not speed_toggled: return "Press E to speed up time."
+	if game.researched.has("time_speed") and game.wave >= 5 and not game.paused and not speed_toggled: return "Press E to speed up time."
 	if not pause_exit_completed and paused_once and first_wave_completed:
 		if collected_tutorial_scrap < game.Content.BARRIER_UNLOCK_SCRAP and not game.scraps.is_empty(): return "Mouse over the scraps to collect."
 		if barrier_tree_closed and info_hover_time < 2.0 and inspected_things.size() < 3:
@@ -379,8 +381,10 @@ func next_core_message() -> String:
 	var comfortably_visible: bool = visible and point.x >= inset and point.x <= dimensions.x - inset
 	if next_core_stage == 1:
 		if comfortably_visible: next_core_stage = 2
-		else: return "WASD to move camera.\nMove Right."
-	return "This is your next core to defend." if comfortably_visible else "Find your next core."
+		else: return "WASD to move camera.\nMove Right." + ("\nUse WASD to move the camera around" if float(ui_revealed.get("wasd_distance", 0.0)) <= game.TILE * 3 else "")
+	var message := "This is your next core to defend.\nPlace your first building here." if comfortably_visible else "Find your next core.\nBuild near it to establish it."
+	if float(ui_revealed.get("wasd_distance", 0.0)) <= game.TILE * 3: message += "\nUse WASD to move the camera around"
+	return message
 
 func on_scrap_collected(amount: int) -> void:
 	collected_tutorial_scrap += amount
@@ -413,6 +417,7 @@ func on_wave_started() -> void:
 	waves_started = true
 	onboarding_completed = true
 func on_wave_completed(number: int) -> void:
+	if number >= 2: ui_revealed.wave_saves = true
 	if number >= 1: first_wave_completed = true
 	if not game.tutorial_enabled and number >= 4: tech_available = true
 func on_tech_opened() -> void:
@@ -549,9 +554,6 @@ func _draw() -> void:
 			drag_label.show()
 	if stage == Stage.SOLAR and game.selected == "solar":
 		glowing_tile(turret_target(), Color("f3ded5"), pulse)
-	if not onboarding_completed:
-		for cell in misplaced_buildings:
-			if game.buildings.has(cell): glowing_tile(cell, Color("ff4444"), pulse)
 func glowing_tile(cell: Vector2i, color: Color, pulse: float) -> void:
 	var rect := Rect2(Vector2(cell * game.TILE) + Vector2.ONE, Vector2.ONE * (game.TILE - 2))
 	draw_rect(rect.grow(3), Color(color, 0.025 + pulse * 0.045))
@@ -586,3 +588,32 @@ func slugger_supply_connected(drill: Vector2i) -> bool:
 	return false
 
 
+
+func record_wasd_movement(distance: float) -> void:
+	ui_revealed.wasd_distance = minf(game.TILE * 3 + 1, float(ui_revealed.get("wasd_distance", 0.0)) + distance)
+func rewind_hint_active() -> bool:
+	return turret_loss_glow or (loss_save_glow and not ui_revealed.get("wave_menu_loaded", false))
+func on_all_turrets_lost() -> void:
+	turret_loss_glow = true
+	ui_revealed.loss_saves_revealed = true
+	if game.saves.entries.is_empty() and not game.saves.initial_checkpoint.is_empty(): game.saves.capture(game.saves.initial_checkpoint)
+	game.saves.remember_learning()
+	game.hud.refresh()
+func on_extractor_destroyed() -> void:
+	if ui_revealed.get("wave_menu_loaded", false): return
+	loss_save_glow = true
+	ui_revealed.loss_saves_revealed = true
+	if game.saves.entries.is_empty() and not game.saves.initial_checkpoint.is_empty(): game.saves.capture(game.saves.initial_checkpoint)
+	game.saves.remember_learning()
+	game.hud.refresh()
+func on_timeline_used() -> void:
+	pass
+func on_wave_menu_opened() -> void:
+	turret_loss_glow = false
+	loss_save_glow = false
+	game.hud.refresh()
+func on_wave_menu_loaded() -> void:
+	turret_loss_glow = false
+	loss_save_glow = false
+	ui_revealed.wave_menu_loaded = true
+	game.saves.remember_learning()

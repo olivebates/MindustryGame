@@ -8,6 +8,9 @@ var firing_goals: Dictionary = {}
 var paths: Dictionary = {}
 var frame_budget_usec := -1
 var turret_cells: Array[Vector2i] = []
+var blocked := PackedByteArray()
+var component_ids := PackedInt32Array()
+var failed_routes: Dictionary = {}
 func begin_frame() -> void:
 	frame_budget_usec = 2000
 func end_frame() -> void:
@@ -22,6 +25,7 @@ func refresh_grid(game: Node2D) -> void:
 	var solids: Array = []
 	var turrets: Array = []
 	for cell in game.buildings:
+		if game.buildings[cell].get("pending", false): continue
 		if game.is_turret(game.buildings[cell].kind): turrets.append([cell, game.turret_range(game.buildings[cell].kind)])
 		if game.buildings[cell].kind == "belt": continue
 		for y in game.footprint_size(game.buildings[cell].kind):
@@ -29,6 +33,15 @@ func refresh_grid(game: Node2D) -> void:
 	var next_signature := hash([game.rocks.keys(), solids, turrets])
 	if signature != next_signature:
 		signature = next_signature
+		component_ids.resize(0)
+		components_ready = false
+		failed_routes.clear()
+		blocked.resize(game.WIDTH * game.HEIGHT)
+		blocked.fill(0)
+		for cell in game.rocks:
+			if game.in_bounds(cell): blocked[cell.x + cell.y * game.WIDTH] = 1
+		for cell in solids:
+			if game.in_bounds(cell): blocked[cell.x + cell.y * game.WIDTH] = 1
 		turret_cells.clear()
 		for turret in turrets: turret_cells.append(turret[0])
 		routes.clear()
@@ -62,11 +75,13 @@ func route(game: Node2D, position: Vector2, ignore_turrets: bool = false, attack
 	return result
 func find_route(game: Node2D, position: Vector2, ignore_turrets: bool = false, attack_range: float = -1.0, actor: Dictionary = {}) -> Dictionary:
 	if signature == -1: refresh_grid(game)
+	if not ensure_components(game): return {}
 	if attack_range < 0: attack_range = game.TILE
 	var navigation_grid: AStarGrid2D = runner_grid if ignore_turrets else grid
 	var origin := Vector2i((position / game.TILE).floor())
 	if not navigation_grid.is_in_boundsv(origin): return {}
 	var cache_key := "%d,%d,%d,%d" % [origin.x, origin.y, int(ignore_turrets), roundi(attack_range)]
+	if failed_routes.get(cache_key, 0) > Time.get_ticks_msec(): return {}
 	var priority := priority_turret(game, position, ignore_turrets)
 	if routes.has(cache_key):
 		var cached: Dictionary = routes[cache_key]
@@ -76,6 +91,7 @@ func find_route(game: Node2D, position: Vector2, ignore_turrets: bool = false, a
 	var candidates: Array = []
 	var walls: Array = []
 	for cell in game.buildings:
+		if game.buildings[cell].get("pending", false): continue
 		var kind: String = game.buildings[cell].kind
 		if kind == "wall":
 			walls.append(cell)
@@ -99,6 +115,9 @@ func find_route(game: Node2D, position: Vector2, ignore_turrets: bool = false, a
 	for target in candidates:
 		if game.buildings[target].kind == "wall" and not best.is_empty() and game.buildings[best.target].kind != "wall": break
 		var candidate := firing_route(game, navigation_grid, origin, position, target, attack_range, actor)
+		if candidate.is_empty() and game.buildings[target].kind == "wall":
+			candidate = firing_route(game, navigation_grid, origin, position, target, attack_range)
+			if not candidate.is_empty(): candidate.shared_barrier = true
 		if candidate.is_empty(): continue
 		if candidate.cost < best_cost:
 			best = candidate
@@ -107,11 +126,14 @@ func find_route(game: Node2D, position: Vector2, ignore_turrets: bool = false, a
 	navigation_grid.set_point_solid(origin, origin_solid)
 	if routes.size() >= 4096: routes.clear()
 	routes[cache_key] = best
+	if best.is_empty(): failed_routes[cache_key] = Time.get_ticks_msec() + 350
+	if failed_routes.size() > 4096: failed_routes.clear()
 	return best
 func firing_route(game: Node2D, navigation_grid: AStarGrid2D, origin: Vector2i, position: Vector2, target: Vector2i, reach: float, actor: Dictionary = {}) -> Dictionary:
 	if position.distance_to(game.building_center(target)) <= reach and game.enemy_has_line_of_sight(position, target) and game.enemy_goal_available(position, actor):
 		return {"target": target, "waypoint": position, "destination": position, "cost": 0.0, "path": []}
-	var key := "%s:%d:%d" % [target, roundi(reach), int(navigation_grid == runner_grid)]
+	var components := reachable_components(game, origin)
+	var key := "%s:%d:%d:%d" % [target, roundi(reach), int(navigation_grid == runner_grid), hash(components)]
 	if not firing_goals.has(key):
 		var radius := ceili(reach / game.TILE) + 1
 		var cells: Array[Vector2i] = []
@@ -119,6 +141,7 @@ func firing_route(game: Node2D, navigation_grid: AStarGrid2D, origin: Vector2i, 
 		for y in range(maxi(0, target.y - radius), mini(game.HEIGHT, target.y + radius + 1)):
 			for x in range(maxi(0, target.x - radius), mini(game.WIDTH, target.x + radius + 1)):
 				var cell := Vector2i(x, y)
+				if not components.has(component_ids[cell.x + cell.y * game.WIDTH]): continue
 				if navigation_grid.is_point_solid(cell): continue
 				var point: Vector2 = game.cell_center(cell)
 				if point.distance_squared_to(center) <= reach * reach and game.enemy_has_line_of_sight(point, target): cells.append(cell)
@@ -153,12 +176,14 @@ func firing_route(game: Node2D, navigation_grid: AStarGrid2D, origin: Vector2i, 
 
 func resume_destination(game: Node2D, actor: Dictionary, previous: Dictionary) -> Dictionary:
 	if previous.is_empty() or not game.buildings.has(previous.target) or not game.enemy_goal_available(previous.destination, actor): return {}
+	if not ensure_components(game): return {}
 	var point: Vector2 = previous.destination
 	if not game.enemy_has_line_of_sight(point, previous.target): return {}
 	var navigation_grid: AStarGrid2D = runner_grid if actor.kind == "runner" else grid
 	var origin := Vector2i((actor.pos / game.TILE).floor())
 	var goal := Vector2i((point / game.TILE).floor())
 	if not navigation_grid.is_in_boundsv(origin) or not navigation_grid.is_in_boundsv(goal) or navigation_grid.is_point_solid(goal): return {}
+	if not reachable_components(game, origin).has(component_ids[goal.x + goal.y * game.WIDTH]): return {}
 	var started := Time.get_ticks_usec()
 	var solid := navigation_grid.is_point_solid(origin)
 	navigation_grid.set_point_solid(origin, false)
@@ -179,4 +204,59 @@ func priority_turret(game: Node2D, position: Vector2, ignore_turrets: bool = fal
 			nearest = distance
 			result = cell
 	return result
+
+var components_ready := false
+var component_scan := 0
+var component_number := 0
+var component_queue: Array[int] = []
+var component_cursor := 0
+func ensure_components(game: Node2D) -> bool:
+	if components_ready: return true
+	if component_ids.size() != blocked.size():
+		component_ids.resize(blocked.size())
+		component_ids.fill(-1)
+		component_scan = 0
+		component_number = 0
+		component_queue.clear()
+		component_cursor = 0
+	var deadline: int = Time.get_ticks_usec() + maxi(200, frame_budget_usec) if frame_budget_usec >= 0 else 9223372036854775807
+	var work := 0
+	while true:
+		while component_cursor < component_queue.size():
+			var cell: int = component_queue[component_cursor]
+			component_cursor += 1
+			for offset in [1, -1, game.WIDTH, -game.WIDTH]:
+				var neighbor: int = cell + offset
+				if neighbor < 0 or neighbor >= blocked.size(): continue
+				if absi(offset) == 1 and neighbor / game.WIDTH != cell / game.WIDTH: continue
+				if blocked[neighbor] or component_ids[neighbor] != -1: continue
+				component_ids[neighbor] = component_number
+				component_queue.append(neighbor)
+			work += 1
+			if work % 64 == 0 and Time.get_ticks_usec() >= deadline: return false
+		if not component_queue.is_empty(): component_number += 1
+		component_queue.clear()
+		component_cursor = 0
+		while component_scan < blocked.size() and (blocked[component_scan] or component_ids[component_scan] != -1): component_scan += 1
+		if component_scan >= blocked.size():
+			components_ready = true
+			return true
+		component_ids[component_scan] = component_number
+		component_queue.append(component_scan)
+		component_scan += 1
+	return false
+func reachable_components(game: Node2D, origin: Vector2i) -> Array[int]:
+	var result: Array[int] = []
+	var index: int = origin.x + origin.y * game.WIDTH
+	if component_ids[index] >= 0:
+		result.append(component_ids[index])
+		return result
+	for direction in game.DIRS:
+		var neighbor: Vector2i = origin + direction
+		if not game.in_bounds(neighbor): continue
+		var id: int = component_ids[neighbor.x + neighbor.y * game.WIDTH]
+		if id >= 0 and not result.has(id): result.append(id)
+	return result
+
+
 

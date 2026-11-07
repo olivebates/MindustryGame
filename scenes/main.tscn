@@ -22,7 +22,7 @@ position = Vector2(1856, 736)
 script = ExtResource("2")
 waves_before_conversion = 8
 core_resource_price_increase = Dictionary[String, float]({})
-credits_per_wave = PackedInt32Array(3, 3, 5, 12, 20, 39, 70, 110)
+credits_per_wave = PackedInt32Array(3, 3, 5, 12, 20, 30, 39, 57)
 possible_colors = PackedStringArray("red")
 wave_color_palettes = Array[PackedStringArray]([PackedStringArray("red"), PackedStringArray("red")])
 allowed_enemies = PackedStringArray("scout", "heavy", "bulwark")
@@ -31,11 +31,19 @@ allowed_enemies = PackedStringArray("scout", "heavy", "bulwark")
 position = Vector2(2592, 1440)
 script = ExtResource("2")
 Order = 2
-waves_before_conversion = 11
+waves_before_conversion = 10
 core_resource_price_increase = null
-credits_per_wave = PackedInt32Array(5, 10, 20, 50, 80, 110, 130, 170, 200, 350, 450)
+credits_per_wave = PackedInt32Array(5, 10, 20, 50, 120, 200, 292, 0, 230, 300)
 possible_colors = PackedStringArray("red")
 allowed_enemies = PackedStringArray("scout", "heavy", "bulwark", "siege")
 wave_enemy_lists = null
+
+[node name="SouthernRift" type="Node2D" parent="EnemySpawns/DistantFrontier" unique_id=1153989898]
+position = Vector2(2192, 2192)
+script = ExtResource("2")
+Order = 3
+credits_per_wave = PackedInt32Array(155, 180, 220, 260)
+possible_colors = PackedStringArray("red", "green", "blue")
+allowed_enemies = PackedStringArray("scout", "runner", "heavy", "skirmisher", "bulwark", "siege", "mender")
 
 [editable path="Level"]

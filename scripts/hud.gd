@@ -1,4 +1,4 @@
-﻿extends CanvasLayer
+extends CanvasLayer
 const INK := Color("f3ded5")
 const MUTED := Color("b29a91")
 const ACCENT := Color("edb183")
@@ -90,6 +90,7 @@ var shortage_cooldown := 0.0
 var last_shortage_message := ""
 var feedback_labels: Array[Label] = []
 var back_button: Button
+var demolish_button: Button
 var saves_button: Button
 var save_browser: RefCounted
 var tooltip_layer: CanvasLayer
@@ -482,7 +483,7 @@ func _rebuild_cards() -> void:
 		var card := button(expanded, "", Vector2((index % columns) * 188, 24 + (index / columns) * 80), Vector2(188, 80), func():
 			game.select_building(kind)
 		)
-		icon(card, game.ui_textures[kind], Vector2(8, 8), Vector2(32, 32))
+		icon(card, game.ui_textures.wall_iron if kind == "wall" and game.researched.has("iron_barriers") else game.ui_textures[kind], Vector2(8, 8), Vector2(32, 32))
 		label(card, data.name, Vector2(46, 8), Vector2(134, 32), 13)
 		var amounts := cost_row(card, game.building_cost(kind), Vector2(8, 48))
 		if index < 9 and build_hotkeys_available(): set_hotkey_label(card, str(index + 1), true)
@@ -537,18 +538,21 @@ func _build_wave_controls() -> void:
 	wave_controls.anchor_right = 1
 	wave_controls.anchor_top = 1
 	wave_controls.anchor_bottom = 1
-	back_button = button(wave_controls, "", Vector2.ZERO, Vector2(72, 72), func(): save_browser.confirm_restore(game.saves.current, true))
+	demolish_button = button(wave_controls, "", Vector2.ZERO, Vector2(72, 72), func(): game.select_tool("abolish"))
+	set_button_icon(demolish_button, "demolish")
+	set_info(demolish_button, "Demolish", "Toggle demolition mode to remove buildings.", "X")
+	back_button = button(wave_controls, "", Vector2(72, 0), Vector2(72, 72), func(): save_browser.confirm_restore(game.saves.current, true))
 	set_button_icon(back_button, "undo")
 	set_info(back_button, "Go back one save", "Restore the previous wave checkpoint and pause.", "")
-	saves_button = button(wave_controls, "", Vector2(72, 0), Vector2(72, 72), func(): save_browser.show_browser())
+	saves_button = button(wave_controls, "", Vector2(144, 0), Vector2(72, 72), func(): save_browser.show_browser())
 	set_button_icon(saves_button, "saves")
-	set_info(saves_button, "Browse saves", "Choose a wave checkpoint from your saved timeline.", "")
-	next_button = button(wave_controls, "Start", Vector2(72, 0), Vector2(178, 72), game.request_next_wave)
+	set_info(saves_button, "Browse saves", "Browse saved waves grouped by core.", "")
+	next_button = button(wave_controls, "Start", Vector2(144, 0), Vector2(178, 72), game.request_next_wave)
 	set_info(next_button, "Next wave", "Start the next enemy wave early.", "Q")
 	next_button.add_theme_font_size_override("font_size", 24)
-	speed_button = button(wave_controls, "", Vector2(250, 0), Vector2(72, 72), game.cycle_speed)
-	pause_button = button(wave_controls, "", Vector2(322, 0), Vector2(72, 72), game.toggle_pause)
-	set_info(speed_button, "Speed", "Switch between normal and five times simulation speed.", "E")
+	speed_button = button(wave_controls, "", Vector2(322, 0), Vector2(72, 72), game.cycle_speed)
+	pause_button = button(wave_controls, "", Vector2(394, 0), Vector2(72, 72), game.toggle_pause)
+	set_info(speed_button, "Speed", "Switch between normal and triple simulation speed.", "E")
 	set_info(pause_button, "Pause / Resume", "Freeze the battle while you build or demolish.", "Space")
 func is_pointer_over_ui(pointer_override: Vector2 = Vector2.INF) -> bool:
 	if is_instance_valid(modal) and modal.visible: return true
@@ -569,12 +573,14 @@ func refresh() -> void:
 	next_button.add_theme_font_size_override("font_size", 18 if active or game.tutorial.waves_started else 24)
 	next_button.set_meta("tutorial_glow", game.tutorial.stage >= game.tutorial.Stage.READY and not game.tutorial.waves_started and not game.tutorial.ui_revealed.get("start_called", false))
 	set_button_icon(speed_button, "speed3")
-	speed_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.speed == 5 else Color.TRANSPARENT))
+	speed_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.speed == 3 else Color.TRANSPARENT))
 	pause_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.paused else Color.TRANSPARENT))
 	set_button_icon(pause_button, "play" if game.paused else "pause")
-	speed_button.set_meta("info", ["Speed: x%d" % game.speed, "Switch between normal and five times simulation speed.", "E"])
+	speed_button.set_meta("info", ["Speed: x%d" % game.speed, "Switch between normal and triple simulation speed.", "E"])
 	back_button.disabled = game.saves.current < 0
-	saves_button.visible = false
+	demolish_button.disabled = game.lost
+	demolish_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.active_tool == "abolish" else Color.TRANSPARENT))
+	saves_button.visible = save_browser.available()
 	save_browser.refresh_timeline()
 	var remaining := ceili(maxf(0, game.wave_timer))
 	wave_label.text = "00:00" if game.last_round_active() else "%02d:%02d" % [remaining / 60, remaining % 60]
@@ -655,6 +661,8 @@ func _process(dt: float) -> void:
 	apply_button_glow(next_button)
 	back_button.set_meta("tutorial_glow", game.lost)
 	apply_button_glow(back_button)
+	saves_button.set_meta("tutorial_glow", game.tutorial.rewind_hint_active())
+	apply_button_glow(saves_button)
 	apply_button_glow(tech_button)
 	for target in category_buttons.values(): apply_button_glow(target)
 	for target in cards.values(): apply_button_glow(target)
@@ -760,7 +768,7 @@ func _refresh_tooltip(pointer_override: Vector2 = Vector2.INF) -> void:
 		return
 	for enemy in game.enemies:
 		if enemy.hp <= 0 or not game.is_cell_visible(Vector2i((enemy.pos / game.TILE).floor())): continue
-		if (game.get_canvas_transform().affine_inverse() * pointer).distance_to(enemy.pos) <= game.Content.ENEMY_TYPES[enemy.kind].size * 0.6:
+		if (game.get_canvas_transform().affine_inverse() * pointer).distance_to(game.enemy_visual_position(enemy)) <= game.Content.ENEMY_TYPES[enemy.kind].size * 0.6:
 			hovered_enemy = enemy
 			var info = preload("res://scripts/structure_info.gd")
 			show_info(game.Content.ENEMY_TYPES[enemy.kind].name, info.enemy_stats(game, enemy), pointer, {"damaged": enemy.hp < enemy.max_hp})
@@ -770,7 +778,7 @@ func _refresh_tooltip(pointer_override: Vector2 = Vector2.INF) -> void:
 	if not building.is_empty():
 		show_structure_info(building.kind, building, pointer)
 	elif game.ores.has(game.hover_cell):
-		show_info(game.ores[game.hover_cell].capitalize() + " deposit", "Hold the mouse button to gather this ore.\nManual extraction: 1 / %s" % ("5 seconds" if game.ores[game.hover_cell] == "iron" else "second"), pointer)
+		show_info(game.ores[game.hover_cell].capitalize() + " deposit", "Hold the mouse button to gather this ore.\nManual extraction: 1 / %s" % "second", pointer)
 
 func show_structure_info(kind: String, building: Dictionary, pointer: Vector2) -> void:
 	if kind == "core" and not building.is_empty(): hovered_core = game.anchor_at(game.hover_cell)
@@ -891,7 +899,8 @@ func show_tech_tree() -> void:
 	tech_scroll.set_script(preload("res://scripts/tech_viewport.gd"))
 	tech_scroll.position = Vector2(0, 70)
 	tech_scroll.size = Vector2(960, 535)
-	tech_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	tech_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	tech_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	content.add_child(tech_scroll)
 	tech_graph = Control.new()
 	tech_graph.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -904,6 +913,10 @@ func show_tech_tree() -> void:
 			tech_graph.draw_line(start, end, BORDER, 2.0)
 	)
 	_rebuild_tech_nodes()
+	var focus_id := "barriers"
+	for id in game.researched:
+		if tech_buttons.has(id): focus_id = id
+	tech_scroll.call_deferred("center_on_tech", game.TECH[focus_id].pos + Vector2(108, 64))
 	tech_material_strip = Control.new()
 	tech_material_strip.position = Vector2(24, 620)
 	tech_material_strip.size = Vector2(912, 28)
@@ -915,7 +928,7 @@ func show_tech_tree() -> void:
 func visible_tech_ids() -> Array[String]:
 	var result: Array[String] = []
 	for id in game.TECH:
-		if id not in ["barriers", "turret_range", "copper_storage", "auto_scrap", "splitter", "weapons"]: continue
+		if id not in ["barriers", "iron_barriers", "slugger_shield", "time_speed", "turret_range", "copper_storage", "auto_scrap", "splitter", "weapons"]: continue
 		var parent: String = game.TECH[id].parent
 		if game.TECH[id].get("starter_color", false) and not game.researched.has(parent): continue
 		if game.researched.has(id) or parent == "" or game.researched.has(parent): result.append(id)
@@ -1073,7 +1086,7 @@ func _sync_tutorial_ui() -> void:
 	if progress.stage >= progress.Stage.SOLAR: progress.ui_revealed.solar_unlocked = true
 	if game.researched.has("barriers") or progress.barrier_tree_closed: progress.ui_revealed.split = true
 	if game.tutorial_enabled and game.researched.has("barriers"): progress.ui_revealed.barrier_building = true
-	var central: String = "Use the arrow button or timeline to roll back time." if game.lost else progress.central_message()
+	var central: String = "Use the arrow button or save menu to roll back time." if game.lost else progress.central_message()
 	tutorial_prompt.visible = game.lost or (not sandbox and central != "")
 	if is_instance_valid(game.capture_effect) and game.capture_effect.active: tutorial_prompt.visible = false
 	tutorial_prompt.text = central
@@ -1092,7 +1105,13 @@ func _sync_tutorial_ui() -> void:
 	palette.visible = sandbox or progress.stage >= progress.Stage.EXTRACTOR or progress.ui_revealed.get("palette", false)
 	wave_controls.visible = progress.start_controls_available() or (progress.waves_started and progress.ui_revealed.get("waves", false))
 	pause_button.visible = progress.pause_available() or progress.ui_revealed.get("pause", false)
-	wave_controls.offset_left = -394 if pause_button.visible else -322
+	speed_button.visible = game.researched.has("time_speed")
+	var start_x := 216 if save_browser.available() else 144
+	next_button.position.x = start_x
+	speed_button.position.x = start_x + 178
+	var controls_width := start_x + 178 + (72 if speed_button.visible else 0) + (72 if pause_button.visible else 0)
+	pause_button.position.x = start_x + 178 + (72 if speed_button.visible else 0)
+	wave_controls.offset_left = -controls_width
 	wave_controls.offset_right = 0
 	map_panel.visible = wave_controls.visible
 	wave_label.visible = wave_controls.visible
@@ -1187,8 +1206,12 @@ func handle_number_hotkey(index: int) -> void:
 	for group in category_buttons:
 		if category_buttons[group].visible: groups.append(group)
 	if index < groups.size(): category_buttons[groups[index]].pressed.emit()
+var button_icon_cache: Dictionary = {}
 func set_button_icon(target: Button, id: String) -> void:
-	target.icon = preload("res://scripts/pixel_art.gd").texture(load("res://assets/ui/%s.svg" % id), Vector2i(32, 32))
+	if target.get_meta("icon_id", "") == id: return
+	if not button_icon_cache.has(id): button_icon_cache[id] = preload("res://scripts/pixel_art.gd").texture(load("res://assets/ui/%s.svg" % id), Vector2i(32, 32))
+	target.set_meta("icon_id", id)
+	target.icon = button_icon_cache[id]
 	target.expand_icon = true
 	target.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	target.add_theme_constant_override("icon_max_width", 28)
@@ -1199,6 +1222,9 @@ func tech_stat_summary(id: String) -> String:
 		"copper_storage": return "+50 copper capacity per silo"
 		"auto_scrap": return "Collect scrap automatically after 2s"
 		"build_hotkeys": return "Select menus and buildings: 1–9"
+		"iron_barriers": return "Barrier health ×3"
+		"slugger_shield": return "Blocks one hit; recharges after each wave"
+		"time_speed": return "Press E for x3 speed"
 		"conveyor_speed": return "Conveyors: 1 → 2 items / second"
 		"turret_range":
 			var base: float = game.BUILDINGS.solar.range / game.TILE
@@ -1221,6 +1247,7 @@ func tech_stat_summary(id: String) -> String:
 var spawn_preview: Control
 func build_hotkeys_available() -> bool:
 	return game.tutorial.ui_revealed.get("split", false) or game.researched.has("barriers") or not game.tutorial_enabled
+
 
 
 

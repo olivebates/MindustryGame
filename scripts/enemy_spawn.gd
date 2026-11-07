@@ -17,6 +17,7 @@ var converted := false
 var active := false
 var prepared_color := "red"
 var gate_label: Label
+var face_icon: Texture2D
 func _ready() -> void:
 	if Engine.is_editor_hint(): return
 	gate_label = Label.new()
@@ -45,9 +46,9 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, 25, Color("201418"))
 	draw_arc(Vector2.ZERO, 31, 0, TAU, 48, Color(color, 0.7), line_width())
 	draw_arc(Vector2.ZERO, 23, 0, TAU, 40, color, line_width())
-	for i in 3:
-		var p := Vector2(i * 11 - 11, 0)
-		draw_polyline(PackedVector2Array([p + Vector2(3, -7), p + Vector2(-3, 0), p + Vector2(3, 7)]), color, line_width())
+	if face_icon == null:
+		face_icon = preload("res://scripts/pixel_art.gd").texture(load("res://assets/ui/spawn_face.svg"), Vector2i(64, 64))
+	draw_texture_rect(face_icon, Rect2(-18, -18, 36, 36), false, color)
 	if Engine.is_editor_hint(): draw_string(preload("res://PixelifySans.ttf"), Vector2(-33, 49), "GATE " + (preload("res://scripts/display_numbers.gd").format(Order) if Order >= 1000 else "%02d" % Order), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
 	elif is_instance_valid(gate_label):
 		gate_label.text = "GATE " + (preload("res://scripts/display_numbers.gd").format(Order) if Order >= 1000 else "%02d" % Order)

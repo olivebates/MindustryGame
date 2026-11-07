@@ -5,8 +5,8 @@ func run() -> void:
 		check(numbers.format(pair[0]) == pair[1], "Compact formatter handles %s" % pair[0])
 	fresh()
 	check(game.enemy_health("siege", 1) == 2000 and game.enemy_health("siege", 20) == 2000, "Siege health remains two thousand across waves")
-	check(game.BUILDINGS.turret.damage == 50 and game.BUILDINGS.turret.reload == 4, "Slugger fires fifty damage every four seconds")
-	check(game.BUILDINGS.solar.reload == 0.5, "Solar attack interval is half a second")
+	check(game.BUILDINGS.turret.damage == 50 and is_equal_approx(game.BUILDINGS.turret.reload, 0.8), "Slugger fires fifty damage every eight tenths of a second")
+	check(game.BUILDINGS.solar.reload == 0.1, "Solar attack interval is one tenth of a second")
 	game.inventory.scrap = 1234567
 	game.base_copper_capacity = 1000000
 	game.hud.refresh()
@@ -24,12 +24,13 @@ func run() -> void:
 	var enemy: Dictionary = game.create_enemy("siege", Vector2.ZERO, "red")
 	check(info.enemy_stats(game, enemy).contains("Health: 2k / 2k"), "Enemy tooltip health uses compact formatting")
 	check(info.stats(game, "core").contains("Health: 2k"), "Building tooltip health uses compact formatting")
-	check(info.stats(game, "turret").contains("DPS: 12.5") and info.stats(game, "turret").contains("Shot interval: 4s"), "Slugger tooltip reflects its new attack stats")
-	check(info.stats(game, "solar").contains("DPS: 4") and info.stats(game, "solar").contains("Shot interval: 0.5s"), "Solar tooltip reflects its new attack interval")
+	check(info.stats(game, "turret").contains("DPS: 62.5") and info.stats(game, "turret").contains("Shot interval: 0.8s"), "Slugger tooltip reflects its new attack stats")
+	check(info.stats(game, "solar").contains("DPS: 20") and info.stats(game, "solar").contains("Shot interval: 0.1s"), "Solar tooltip reflects its new attack interval")
 	game.wave = 1499
 	game.hud.refresh()
 	check(game.hud.next_wave_label.text == "Next Wave: 1.5k", "Wave labels use compact formatting")
 	print("COMPACT NUMBER AND COMBAT CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
 

@@ -1,4 +1,4 @@
-﻿extends Control
+extends Control
 var game: Node2D
 var bounds := Rect2(Vector2.ZERO, Vector2.ONE)
 var map_scale := 1.0
@@ -53,6 +53,7 @@ func _draw() -> void:
 		var b: Dictionary = game.buildings[cell]
 		var color: Color = game.TEAM_COLORS[b.color] if game.is_turret(b.kind) else Color("c5a48b")
 		if b.kind == "core": color = game.TEAL if cell == game.current_core else game.RED
+		if b.get("pending", false): color.a = 0.33
 		draw_rect(Rect2(map_point(Vector2(cell)), tile * game.footprint_size(b.kind)), color)
 		if game.core_should_glow(cell):
 			var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.005)

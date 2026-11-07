@@ -159,7 +159,7 @@ func _ready() -> void:
 func sprite_rasters(resolution: int) -> Dictionary:
 	if sprite_raster_sets.has(resolution): return sprite_raster_sets[resolution]
 	var result: Dictionary = {}
-	for kind in ["belt", "splitter", "drill", "solar", "turret", "wall", "core", "barrel", "repeater", "cannon", "healer", "forge", "tunnel_entry", "tunnel_exit", "belt_corner", "belt_dark", "belt_corner_dark", "core_inactive"]:
+	for kind in ["belt", "splitter", "drill", "solar", "turret", "wall", "core", "barrel", "repeater", "cannon", "healer", "forge", "tunnel_entry", "tunnel_exit", "belt_corner", "belt_dark", "belt_corner_dark", "core_inactive", "wall_iron"]:
 		var size: int = roundi(44.0 * resolution / TILE) if kind in ["core", "core_inactive"] else resolution * (BUILDINGS[kind].size if BUILDINGS.has(kind) else 1)
 		result[kind] = PixelArt.texture(load("res://assets/buildings/%s.svg" % kind), Vector2i.ONE * size)
 	for kind in Content.ENEMY_TYPES:
@@ -170,6 +170,7 @@ func sprite_rasters(resolution: int) -> Dictionary:
 			var key := "belt_junction_%d%s" % [mask, suffix]
 			result[key] = PixelArt.texture(load("res://assets/buildings/%s.svg" % key), Vector2i.ONE * resolution)
 	for kind in Content.RESOURCES: result[kind + "_item"] = PixelArt.texture(load("res://assets/items/%s.svg" % kind), Vector2i.ONE * resolution)
+	result.speed3 = PixelArt.texture(load("res://assets/ui/speed3.svg"), Vector2i.ONE * resolution)
 	for value in [5, 20, 50, 200, 1000]: result["scrap_%d_item" % value] = PixelArt.texture(load("res://assets/items/scrap_%d.svg" % value), Vector2i.ONE * resolution)
 	for kind in BUILDINGS:
 		if BUILDINGS[kind].has("stores"): result[kind] = PixelArt.texture(load("res://assets/buildings/%s.svg" % kind), Vector2i.ONE * resolution * BUILDINGS[kind].size)
@@ -213,7 +214,8 @@ func footprint_size(kind: String) -> int:
 	return 1 if kind == "core" else int(BUILDINGS[kind].size)
 func building_center(cell: Vector2i) -> Vector2:
 	if not buildings.has(cell): return cell_center(cell)
-	return Vector2(cell * TILE) + Vector2.ONE * TILE * footprint_size(buildings[cell].kind) / 2.0
+	if not building_centers.has(cell): building_centers[cell] = Vector2(cell * TILE) + Vector2.ONE * TILE * footprint_size(buildings[cell].kind) / 2.0
+	return building_centers[cell]
 func anchor_at(cell: Vector2i) -> Vector2i:
 	return occupied.get(cell, INVALID)
 func building_at(cell: Vector2i) -> Dictionary:
@@ -263,6 +265,14 @@ func research(id: String, free: bool = false) -> bool:
 	if not free: pay(data.cost)
 	researched[id] = true
 	if id == "weapons": researched.turret_red = true
+	if id == "slugger_shield":
+		for building in buildings.values():
+			if building.kind == "turret": building.shield = true
+	if id == "iron_barriers":
+		for b in buildings.values():
+			if b.kind == "wall":
+				b.hp *= 3.0
+				b.max_hp *= 3.0
 	if id == "armor":
 		for b in buildings.values():
 			var extra: float = b.max_hp * 0.25
@@ -274,11 +284,16 @@ func research(id: String, free: bool = false) -> bool:
 	return true
 
 func _add_building(cell: Vector2i, kind: String, direction: int) -> void:
+	building_centers.erase(cell)
 	if kind == "drill": direction = 0
 	var health: float = (2000.0 if kind == "core" else float(BUILDINGS[kind].hp)) * (1.25 if researched.has("armor") else 1.0)
+	if kind == "wall" and researched.has("iron_barriers"): health *= 3.0
 	buildings[cell] = {"kind": kind, "dir": direction, "input_dir": direction, "hp": health, "max_hp": health, "item": "", "travel": 0.0, "progress": 0.0, "cooldown": 0.0, "ammo": 0, "aim": 0.0, "flash": 0.0, "buffer": {"copper": 0, "iron": 0, "verdite": 0, "alloy": 0}, "paid_cost": {}, "tunnel_role": "", "tunnel_pair": INVALID, "pulse": 0.0}
-	buildings[cell].ammo = 80 if is_turret(kind) and not BUILDINGS[kind].get("ammo_free", false) else 0
+	buildings[cell].ammo = turret_ammo_capacity(kind) if is_turret(kind) and not BUILDINGS[kind].get("ammo_free", false) else 0
 	buildings[cell].next_output = direction
+	buildings[cell].shield = kind == "turret" and researched.has("slugger_shield")
+	buildings[cell].pending = kind not in ["core", "belt"] and (not enemies.is_empty() or spawn_remaining > 0)
+	if buildings[cell].pending: has_pending_construction = true
 	buildings[cell].route_dir = -1
 	buildings[cell].color = "red"
 	if kind != "core": placement_counts[kind] = placement_counts.get(kind, 0) + 1
@@ -287,7 +302,7 @@ func _add_building(cell: Vector2i, kind: String, direction: int) -> void:
 	if kind != "core":
 		for core in cores:
 			if buildings.has(core) and cell.distance_squared_to(core) <= core_build_radius * core_build_radius: buildings[core].progress = 1.0
-	enemy_navigation.invalidate(self)
+	if not buildings[cell].pending: enemy_navigation.invalidate(self)
 
 func valid_site(cell: Vector2i, kind: String) -> bool:
 	if not unlocked(kind): return false
@@ -426,6 +441,7 @@ func remove_building(cell: Vector2i, refund: bool = true) -> void:
 	var anchor := anchor_at(cell)
 	if anchor == INVALID or buildings[anchor].kind == "core": return
 	var removal_position := building_center(anchor)
+	var removed_turret: bool = is_turret(buildings[anchor].kind) and not buildings[anchor].get("pending", false) and anchor.distance_squared_to(current_core) <= core_build_radius * core_build_radius
 	var targets: Array[Vector2i] = [anchor]
 	var affected_belts: Dictionary = {}
 	var pair: Vector2i = buildings[anchor].tunnel_pair
@@ -446,6 +462,7 @@ func remove_building(cell: Vector2i, refund: bool = true) -> void:
 		for y in footprint_size(b.kind):
 			for x in footprint_size(b.kind): occupied.erase(target + Vector2i(x, y))
 		buildings.erase(target)
+		building_centers.erase(target)
 		placement_counts[b.kind] = maxi(0, placement_counts.get(b.kind, 0) - 1)
 		tutorial.on_building_removed(target)
 	for resource in inventory: inventory[resource] = mini(inventory[resource], material_capacity(resource))
@@ -454,6 +471,13 @@ func remove_building(cell: Vector2i, refund: bool = true) -> void:
 	tutorial.guide_dirty = true
 	if not affected_belts.is_empty(): refresh_belt_inputs(affected_belts)
 	enemy_navigation.invalidate(self)
+	if removed_turret:
+		var any_turrets := false
+		for other_cell in buildings:
+			if is_turret(buildings[other_cell].kind) and not buildings[other_cell].get("pending", false) and other_cell.distance_squared_to(current_core) <= core_build_radius * core_build_radius:
+				any_turrets = true
+				break
+		if not any_turrets: tutorial.on_all_turrets_lost()
 
 func select_building(kind: String) -> void:
 	if not unlocked(kind):
@@ -712,7 +736,7 @@ func update_manual_mining(dt: float, cell: Vector2i, held: bool) -> void:
 		manual_mining_progress = 0.0
 		return
 	manual_mining_progress += dt * wave_warp_speed()
-	var interval := 5.0 if resource == "iron" else 1.0
+	var interval := manual_mining_interval(resource)
 	while manual_mining_progress >= interval and inventory[resource] < material_capacity(resource):
 		manual_mining_progress -= interval
 		add_resource(resource, 1)
@@ -808,6 +832,9 @@ var camera_right_held := false
 var camera_right_dragged := false
 var camera_right_origin := Vector2.ZERO
 func _input(event: InputEvent) -> void:
+	if handle_savestate_shortcut(event):
+		get_viewport().set_input_as_handled()
+		return
 	if is_instance_valid(hud.modal) and hud.modal.visible: camera_right_held = false
 	if handle_debug_shortcut(event):
 		get_viewport().set_input_as_handled()
@@ -836,6 +863,7 @@ func _input(event: InputEvent) -> void:
 			camera.force_update_scroll()
 		get_viewport().set_input_as_handled()
 func _unhandled_input(event: InputEvent) -> void:
+	if handle_savestate_shortcut(event): return
 	if handle_debug_shortcut(event): return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_M:
 		toggle_audio()
@@ -846,7 +874,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed: cancel_build_selection()
 		return
 	if is_instance_valid(hud.modal) and hud.modal.visible:
-		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE: hud.close_modal()
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and not lost: hud.close_modal()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode >= KEY_1 and event.keycode <= KEY_9:
@@ -911,7 +939,8 @@ func toggle_pause() -> void:
 		if tutorial.collected_tutorial_scrap >= Content.BARRIER_UNLOCK_SCRAP: tutorial.tech_available = true
 	hud.refresh()
 func cycle_speed() -> void:
-	speed = 5 if speed == 1 else 1
+	if lost or not researched.has("time_speed"): return
+	speed = 3 if speed == 1 else 1
 	tutorial.speed_toggled = true
 	hud.refresh()
 func launch_wave() -> void:
@@ -921,6 +950,12 @@ func launch_wave() -> void:
 	if wave_in_progress and not wave_active(): _complete_wave()
 	if paused or active_spawners.is_empty(): return
 	if last_round_active(): return
+	var checkpoint: Array = saves.snapshot().duplicate(true)
+	# Loading a pre-launch checkpoint gives the player the inter-wave build period.
+	checkpoint[1][saves.FIELDS.find("wave_timer")] = inter_wave_delay
+	if not saves.capture(checkpoint, wave + 1):
+		toast(saves.last_error)
+		return
 	_prepare_colors(wave + 1)
 	wave += 1
 	tutorial.on_wave_started()
@@ -931,7 +966,6 @@ func launch_wave() -> void:
 	wave_in_progress = true
 	wave_timer = inter_wave_delay
 	spawn_timer = 0.0
-	if wave == 1 and saves.entries.is_empty(): saves.initial_checkpoint = saves.snapshot().duplicate(true)
 	hud.announce_wave(wave)
 	play_sound("wave")
 func request_next_wave() -> void:
@@ -965,6 +999,8 @@ func cancel_wave_warp() -> void:
 	wave_warp_active = false
 	wave_warp_elapsed = 0.0
 func _process(delta: float) -> void:
+	activate_pending_buildings()
+	update_enemy_visual_offsets(delta)
 	update_demolition_effects(delta)
 	if radial_pending != INVALID and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT): finish_affinity(hud.radial.selected_at(hud.radial.get_local_mouse_position()))
 	var modal_open: bool = is_instance_valid(hud.modal) and hud.modal.visible
@@ -975,7 +1011,10 @@ func _process(delta: float) -> void:
 		if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): move.x -= 1
 		if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): move.x += 1
 		if move != Vector2.ZERO: capture_effect.cancel_pan()
+		var before_move: Vector2 = camera.position
 		camera.position += move.normalized() * delta * 600.0 / camera.zoom.x
+		camera.position = camera.position.clamp(Vector2(180, 100), Vector2(WIDTH * TILE - 180, HEIGHT * TILE - 100))
+		if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_D): tutorial.record_wasd_movement(camera.position.distance_to(before_move))
 	camera.position = camera.position.clamp(Vector2(180, 100), Vector2(WIDTH * TILE - 180, HEIGHT * TILE - 100))
 	camera.position = (camera.position * camera.zoom).round() / camera.zoom
 	hover_cell = Vector2i((get_global_mouse_position() / TILE).floor())
@@ -1028,6 +1067,7 @@ func simulate(dt: float) -> void:
 		var b: Dictionary = buildings[cell]
 		b.flash = maxf(0, b.flash - dt * 5)
 		b.pulse = maxf(0, b.pulse - dt)
+		if b.get("pending", false): continue
 		if is_turret(b.kind): _update_turret(cell, b, dt)
 		elif b.kind == "forge": _update_forge(b, dt)
 		elif b.kind == "healer": _update_healer(cell, b, dt)
@@ -1059,15 +1099,17 @@ func can_receive(target: Vector2i, item: String, source: Vector2i = INVALID) -> 
 	var anchor := anchor_at(target)
 	if anchor == INVALID or anchor == source: return false
 	var b: Dictionary = buildings[anchor]
+	if b.get("pending", false): return false
 	if b.kind == "core": return inventory.has(item) and inventory[item] < material_capacity(item)
 	if b.kind in ["belt", "splitter"]: return b.item == ""
-	if is_turret(b.kind): return not BUILDINGS[b.kind].get("ammo_free", false) and BUILDINGS[b.kind].ammo == item and b.ammo < 80
+	if is_turret(b.kind): return not BUILDINGS[b.kind].get("ammo_free", false) and BUILDINGS[b.kind].ammo == item and b.ammo < turret_ammo_capacity(b.kind)
 	if b.kind == "healer": return wave_active() and item in ["verdite", "alloy"] and b.buffer[item] < 30
 	if b.kind == "forge": return item in ["copper", "iron"] and b.buffer[item] < 10
 	return false
 func _update_items(dt: float) -> void:
 	for cell in buildings:
 		var b: Dictionary = buildings[cell]
+		if b.get("pending", false): continue
 		if b.item == "": continue
 		if b.kind in ["splitter", "drill"]: update_splitter_route(cell, b)
 		var target := output_target(cell, b)
@@ -1090,6 +1132,7 @@ func _move_items() -> void:
 		var changed := false
 		for cell in buildings:
 			var b: Dictionary = buildings[cell]
+			if b.get("pending", false): continue
 			if b.item == "" or b.travel < 0.99999 or departing.has(cell): continue
 			var target := output_target(cell, b)
 			var anchor := anchor_at(target)
@@ -1152,11 +1195,9 @@ func create_enemy(kind: String, pos: Vector2, affinity: String) -> Dictionary:
 	var data: Dictionary = Content.ENEMY_TYPES[kind]
 	return {"kind": kind, "color": affinity, "pos": pos, "hp": health, "max_hp": health, "speed": data.speed, "cooldown": 0.7, "angle": PI, "aim": PI, "flash": 0.0, "velocity": Vector2.ZERO, "windup": 0.35, "info_id": enemy_info_counter}
 func enemy_health(kind: String, number: int) -> float:
-	if kind == "siege": return float(Content.ENEMY_TYPES.siege.hp)
+	if kind in ["siege", "scout", "heavy", "bulwark"]: return float(Content.ENEMY_TYPES[kind].hp)
 	var data: Dictionary = Content.ENEMY_TYPES[kind]
 	var health: float = data.hp + (maxi(0, number - 1) * (3.0 if kind == "scout" else 1.0) if kind in ["scout", "runner"] else number * (12.0 if kind in ["heavy", "bulwark", "siege"] else 7.0))
-	if kind == "heavy": health = floor((Content.ENEMY_TYPES.scout.hp + maxi(0, number - 1) * 3.0) * 8.0 * 0.33 / 10.0) * 10.0
-	if kind == "bulwark": health = (Content.ENEMY_TYPES.scout.hp + maxi(0, number - 1) * 3.0) * 20.0
 	return floorf(health / 10.0) * 3.0
 func _spawn_enemy() -> void:
 	if spawn_queue.is_empty(): return
@@ -1165,7 +1206,8 @@ func _spawn_enemy() -> void:
 	enemy.wave_id = planned.get("wave_id", wave)
 	enemies.append(enemy)
 func _update_turret(cell: Vector2i, b: Dictionary, dt: float) -> void:
-	b.cooldown -= dt
+	if b.get("pending", false): return
+	b.cooldown = maxf(0, b.cooldown) - dt
 	var data: Dictionary = BUILDINGS[b.kind]
 	var origin := building_center(cell)
 	var target_index := -1
@@ -1176,13 +1218,17 @@ func _update_turret(cell: Vector2i, b: Dictionary, dt: float) -> void:
 		if distance < nearest:
 			nearest = distance
 			target_index = i
-	if target_index < 0: return
+	if target_index < 0:
+		if b.kind == "turret": b.progress = 0.0
+		return
 	var enemy: Dictionary = enemies[target_index]
 	b.aim = lerp_angle(b.aim, (enemy.pos - origin).angle(), 1.0 - exp(-16.0 * dt))
-	if (data.get("ammo_free", false) or b.ammo > 0) and b.cooldown <= 0:
+	if b.kind == "turret": b.progress = minf(float(data.reload), b.progress + dt) if b.ammo > 0 else 0.0
+	while (data.get("ammo_free", false) or b.ammo > 0) and b.cooldown <= 0 and enemy.hp > 0 and (b.kind != "turret" or b.progress >= float(data.reload) - 0.00001):
+		if b.kind == "turret": b.progress = 0.0
 		if not data.get("ammo_free", false): b.ammo -= 1
 		play_sound("cannon" if b.kind == "cannon" else "shot", origin)
-		b.cooldown = data.reload
+		b.cooldown += data.reload
 		b.flash = 1.0
 		var damage: float = data.damage * (1.25 if researched.has("damage") else 1.0) * affinity_multiplier(b.color, enemy.color)
 		if b.kind != "turret": enemy.hp -= damage
@@ -1206,7 +1252,7 @@ func _update_enemies(dt: float) -> void:
 			continue
 		enemy.flash = maxf(0, enemy.flash - dt * 5)
 		enemy.recoil = maxf(0, float(enemy.get("recoil", 0.0)) - dt * 5)
-		enemy.cooldown -= dt
+		enemy.cooldown = maxf(0, enemy.cooldown) - dt
 		enemy.windup = maxf(0, float(enemy.get("windup", 0.0)) - dt)
 		enemy.navigation_timer = float(enemy.get("navigation_timer", 0.0)) - dt
 		enemy.separation_cooldown = maxf(0, float(enemy.get("separation_cooldown", 0.0)) - dt)
@@ -1224,12 +1270,12 @@ func _update_enemies(dt: float) -> void:
 				path_index += 1
 				navigation.waypoint = navigation.destination if path_index == route_path.size() - 1 else cell_center(route_path[path_index])
 			navigation.path_index = path_index
-		var destination_conflict: bool = enemy.has("intended_pos") and not enemy_goal_available(enemy.intended_pos, enemy)
+		var destination_conflict: bool = enemy.has("intended_pos") and not navigation.get("shared_barrier", false) and not enemy_goal_available(enemy.intended_pos, enemy)
 		var nearby_turret: Vector2i = enemy_navigation.priority_turret(self, enemy.pos, enemy.kind == "runner")
 		var current_priority: bool = not navigation.is_empty() and is_turret(buildings[navigation.target].kind) and enemy.pos.distance_squared_to(building_center(navigation.target)) <= TILE * TILE * enemy_navigation.TURRET_PRIORITY_TILES * enemy_navigation.TURRET_PRIORITY_TILES
 		var priority_override: bool = nearby_turret != INVALID and not current_priority
-		var needs_route: bool = navigation.is_empty()
-		if not needs_route and not separating:
+		var needs_route: bool = navigation.is_empty() and (enemy.navigation_timer <= 0 or enemy.get("route_revision", -1) != enemy_navigation.signature)
+		if not needs_route and not separating and not navigation.is_empty():
 			needs_route = destination_conflict or not buildings.has(navigation.target) or navigation.get("revision", -1) != enemy_navigation.signature or enemy.get("navigation_resume", false)
 			if priority_override and navigation.get("priority_checked", INVALID) != nearby_turret: needs_route = true
 			if not navigation.has("path"): needs_route = needs_route or enemy.navigation_timer <= 0
@@ -1243,7 +1289,8 @@ func _update_enemies(dt: float) -> void:
 				enemy.navigation = navigation
 				if not navigation.is_empty(): enemy.intended_pos = navigation.destination
 				else: enemy.erase("intended_pos")
-				enemy.navigation_timer = 0.25
+				enemy.route_revision = enemy_navigation.signature
+				enemy.navigation_timer = (1.0 + fmod(float(enemy.info_id), 17) * 0.02 if enemy_navigation.components_ready else 0.0) if navigation.is_empty() else 0.25
 			elif not navigation.is_empty() and not buildings.has(navigation.target):
 				navigation = {}
 		if navigation.is_empty() and not separating: continue
@@ -1262,8 +1309,9 @@ func _update_enemies(dt: float) -> void:
 			if not separating and navigation.get("path_index", 0) + 1 < navigation.get("path", []).size(): approach = 1.0
 			desired = direction * enemy.speed * approach
 		var velocity: Vector2 = enemy.get("velocity", Vector2.ZERO)
-		velocity = velocity.move_toward(desired, (80.0 if desired != Vector2.ZERO else 140.0) * dt)
+		velocity = velocity.move_toward(desired, (2000.0 if desired != Vector2.ZERO else 3500.0) * dt)
 		var next_position: Vector2 = enemy.pos + velocity * dt
+		if toward.length() <= velocity.length() * dt and toward.dot(velocity) > 0: next_position = enemy.pos + toward
 		var origin_cell := Vector2i((enemy.pos / TILE).floor())
 		var step := Vector2i((next_position / TILE).floor()) - origin_cell
 		if step != Vector2i.ZERO and not enemy_separation.can_step(enemy_navigation.runner_grid, origin_cell, step):
@@ -1278,6 +1326,7 @@ func _update_enemies(dt: float) -> void:
 		var shot_distance := reach + 2.0
 		var priority_target := -1
 		for cell in buildings:
+			if buildings[cell].get("pending", false): continue
 			if buildings[cell].kind == "core" and cell != current_core: continue
 			if enemy.kind == "runner" and is_turret(buildings[cell].kind): continue
 			var distance: float = enemy.pos.distance_to(building_center(cell))
@@ -1290,9 +1339,12 @@ func _update_enemies(dt: float) -> void:
 				priority_target = priority
 		var aim_target: Vector2 = building_center(shot_target if shot_target != INVALID else target)
 		enemy.aim = lerp_angle(float(enemy.get("aim", enemy.angle)), (aim_target - enemy.pos).angle(), 1.0 - exp(-9.0 * dt))
-		if shot_target != INVALID and enemy.cooldown <= 0:
+		if enemy.kind in ["bulwark", "siege"]:
+			enemy.charge = minf(1.0, float(enemy.get("charge", 0.0)) + dt / stats.reload) if shot_target != INVALID else 0.0
+		while shot_target != INVALID and buildings.has(shot_target) and enemy.cooldown <= 0 and (enemy.kind not in ["bulwark", "siege"] or enemy.get("charge", 0.0) >= 0.99999):
+			if enemy.kind in ["bulwark", "siege"]: enemy.charge = 0.0
 			enemy.recoil = 1.0
-			enemy.cooldown = stats.reload
+			enemy.cooldown += stats.reload
 			shots.append({"from": enemy.pos + Vector2.from_angle(enemy.aim) * stats.size * 0.4, "to": building_center(shot_target), "life": 0.16, "color": TEAM_COLORS[enemy.color]})
 			_damage_building(shot_target, stats.damage)
 			if lost: return
@@ -1330,16 +1382,19 @@ func enemy_goal_available(point: Vector2, actor: Dictionary) -> bool:
 func shot_cell_blocked(cell: Vector2i, target: Vector2i) -> bool:
 	if rocks.has(cell): return true
 	var anchor := anchor_at(cell)
-	return anchor != INVALID and anchor != target and buildings[anchor].kind == "wall"
+	return anchor != INVALID and anchor != target and buildings[anchor].kind == "wall" and not buildings[anchor].get("pending", false)
 func visible_enemy_objective(enemy: Dictionary) -> Vector2i:
 	var nearest: float = Content.ENEMY_TYPES[enemy.kind].reach + 2.0
 	var navigation: Dictionary = enemy.get("navigation", {})
+	if not navigation.is_empty() and buildings.has(navigation.target) and buildings[navigation.target].kind == "wall":
+		if enemy.pos.distance_to(building_center(navigation.target)) <= nearest and enemy_has_line_of_sight(enemy.pos, navigation.target): return navigation.target
 	if not navigation.is_empty() and buildings.has(navigation.target) and is_turret(buildings[navigation.target].kind) and enemy.kind != "runner":
 		var distance: float = enemy.pos.distance_to(building_center(navigation.target))
 		if distance <= TILE * enemy_navigation.TURRET_PRIORITY_TILES:
 			return navigation.target if distance <= nearest and enemy_has_line_of_sight(enemy.pos, navigation.target) else INVALID
 	var target := INVALID
 	for cell in buildings:
+		if buildings[cell].get("pending", false): continue
 		var kind: String = buildings[cell].kind
 		if kind in ["belt", "wall"] or (kind == "core" and cell != current_core) or (enemy.kind == "runner" and is_turret(kind)): continue
 		var distance: float = enemy.pos.distance_to(building_center(cell))
@@ -1351,20 +1406,29 @@ func _damage_building(cell: Vector2i, amount: float) -> void:
 	var anchor := anchor_at(cell)
 	if anchor == INVALID: return
 	var b: Dictionary = buildings[anchor]
+	if b.get("pending", false): return
+	if amount > 0 and b.get("shield", false):
+		b.shield = false
+		b.pulse = 0.65
+		_sparks(building_center(anchor), Color("79caff"), 20)
+		play_sound("gate", building_center(anchor))
+		return
 	if amount > 0:
 		tutorial.first_damage_taken = true
-		hud.refresh()
+		hud_timer = 0.1
 	b.hp -= amount
 	b.flash = 1.0
 	if b.kind == "core" and anchor == current_core: core_health = maxf(0, b.hp)
 	if b.hp <= 0:
+		if b.kind == "drill": tutorial.on_extractor_destroyed()
 		_sparks(building_center(anchor), COPPER, 18)
 		if b.kind == "core":
 			lost = true
 			play_sound("defeat")
 			if saves.entries.is_empty() and not saves.initial_checkpoint.is_empty(): saves.capture(saves.initial_checkpoint)
 			hud.save_browser.show_browser(true)
-		else: remove_building(anchor, false)
+		else:
+			remove_building(anchor, false)
 func _sparks(pos: Vector2, color: Color, count: int) -> void:
 	for i in count:
 		particles.append({"pos": pos, "velocity": Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(20, 100), "life": rng.randf_range(0.15, 0.5), "color": color})
@@ -1423,7 +1487,7 @@ func _draw_cursor() -> void:
 		return
 	if manual_mining_cell == hover_cell and manual_mining_progress > 0:
 		var color: Color = RESOURCE_COLORS.get(ores.get(hover_cell, "copper"), COPPER)
-		var progress := manual_mining_progress / (5.0 if ores.get(hover_cell) == "iron" else 1.0)
+		var progress := manual_mining_progress / manual_mining_interval(ores.get(hover_cell, "copper"))
 		draw_texture_rect(PixelArt.mining_ring(progress, color, raster_tile_size), Rect2(Vector2(hover_cell * TILE), Vector2(TILE, TILE)), false)
 	if active_tool == "blueprint_select" and dragging:
 		var low := Vector2i(mini(drag_start.x, blueprint_end.x), mini(drag_start.y, blueprint_end.y))
@@ -1461,7 +1525,8 @@ func _draw_cursor() -> void:
 		var dim: float = TILE * footprint_size(selected)
 		var rect := Rect2(Vector2(hover_cell * TILE), Vector2.ONE * dim)
 		draw_set_transform(rect.get_center(), build_direction * PI / 2.0 if selected == "belt" else 0.0)
-		draw_texture_rect(textures.belt_dark if selected == "belt" and not researched.has("conveyor_speed") else textures[selected], Rect2(-rect.size / 2, rect.size), false, Color(color, 0.45))
+		var ghost_texture: Texture2D = textures.wall_iron if selected == "wall" and researched.has("iron_barriers") else (textures.belt_dark if selected == "belt" and not researched.has("conveyor_speed") else textures[selected])
+		draw_texture_rect(ghost_texture, Rect2(-rect.size / 2, rect.size), false, Color(color, 0.45))
 		draw_set_transform(Vector2.ZERO)
 		draw_rect(rect, color, false, line_width())
 		if is_turret(selected): _draw_range(rect.get_center(), turret_range(selected), color)
@@ -1471,10 +1536,12 @@ func _draw_range(origin: Vector2, radius: float, color: Color) -> void:
 	draw_circle(origin, radius, Color(color, 0.025))
 	draw_arc(origin, radius, 0, TAU, 80, Color(color, 0.25), line_width())
 func set_camera_zoom(value: float) -> void:
+	if is_instance_valid(camera_zoom_tween): camera_zoom_tween.kill()
 	var index := 0
 	for candidate in ZOOM_LEVELS.size():
 		if absf(ZOOM_LEVELS[candidate] - value) < absf(ZOOM_LEVELS[index] - value): index = candidate
 	camera.zoom = Vector2.ONE * ZOOM_LEVELS[index]
+	camera_zoom_target = ZOOM_LEVELS[index]
 	camera.position = (camera.position * camera.zoom).round() / camera.zoom
 	var resolution: int = roundi(TILE * ZOOM_LEVELS[index])
 	if resolution != raster_tile_size:
@@ -1483,13 +1550,26 @@ func set_camera_zoom(value: float) -> void:
 		configure_tile_rasters(resolution)
 	queue_redraw()
 func step_camera_zoom(direction: int) -> void:
-	var index := maxi(0, ZOOM_LEVELS.find(camera.zoom.x))
-	set_camera_zoom(ZOOM_LEVELS[clampi(index + direction, 0, ZOOM_LEVELS.size() - 1)])
+	capture_effect.cancel_pan()
+	var index := maxi(0, ZOOM_LEVELS.find(camera_zoom_target))
+	animate_camera_zoom(ZOOM_LEVELS[clampi(index + direction, 0, ZOOM_LEVELS.size() - 1)], 0.2)
+var camera_zoom_target := 2.0
+var camera_zoom_tween: Tween
+func animate_camera_zoom(value: float, duration: float = 0.2) -> void:
+	var from := camera.zoom
+	set_camera_zoom(value)
+	camera.zoom = from
+	camera_zoom_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	camera_zoom_tween.tween_property(camera, "zoom", Vector2.ONE * camera_zoom_target, duration)
 func _draw_building(cell: Vector2i, b: Dictionary) -> void:
+	if b.get("pending", false):
+		draw_pending_building(cell, b)
+		return
 	var p := building_center(cell).round()
 	var dimension: float = 44.0 if b.kind == "core" else TILE * footprint_size(b.kind)
 	var rect := Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension)
 	var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not researched.has("conveyor_speed") else textures[b.kind]
+	if b.kind == "wall" and researched.has("iron_barriers"): texture = textures.wall_iron
 	if b.kind == "solar": texture = textures.solar_base
 	if b.kind == "core" and cell != current_core: texture = textures.core_inactive
 	var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
@@ -1534,27 +1614,54 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 			var side := Vector2(-axis.y, axis.x)
 			draw_polygon(PackedVector2Array([p + axis * 6, p - axis * 3 + side * 3, p - axis * 3 - side * 3]), PackedColorArray([TEAL]))
 	elif is_turret(b.kind):
-		draw_set_transform(p + Vector2(0, 2) if b.kind == "solar" else p, b.aim)
+		var gun_position := p + Vector2(0, 2) if b.kind == "solar" else p
+		if b.kind == "turret":
+			var loading: float = clampf(b.progress / BUILDINGS.turret.reload, 0, 1)
+			gun_position -= Vector2.from_angle(b.aim) * (pow(loading, 3) * 4 + b.flash * 6)
+		draw_set_transform(gun_position.round(), b.aim)
 		if b.kind == "solar": draw_texture_rect(textures.solar_gun, Rect2(-16, -16, 32, 32), false)
 		else: draw_texture_rect(textures.barrel, Rect2(-16, -16, 32, 32), false, Color("c1cdd0") if b.kind in ["cannon", "turret"] else Color.WHITE)
 		draw_set_transform(Vector2.ZERO)
+		if b.kind == "turret" and b.progress > 0:
+			var charge: float = clampf(b.progress / BUILDINGS.turret.reload, 0, 1)
+			var axis := Vector2.from_angle(b.aim)
+			var side := axis.orthogonal()
+			var muzzle := (p + axis * 15).round()
+			var tint := Color("ffd49a").lerp(Color.WHITE, charge)
+			for spark in 5:
+				var phase := fposmod(charge * 3 + spark / 5.0, 1.0)
+				var spark_angle := spark * TAU / 5 + charge * 2
+				var point := muzzle + Vector2.from_angle(spark_angle) * (5 + (1 - phase) * 18)
+				draw_rect(Rect2(point.round(), Vector2.ONE * (1 + charge * 2)), Color(tint, phase * charge))
+			for rail in [-1, 1]:
+				var start: Vector2 = (p - axis * 8 + side * rail * (10 - charge * 5)).round()
+				var end: Vector2 = (p + axis * (2 + charge * 13) + side * rail * 5).round()
+				draw_line(start, end, Color(tint, 0.3 + charge * 0.7), line_width())
+			draw_circle(muzzle, 2 + charge * 5, Color(tint, charge * 0.3))
+			draw_rect(Rect2(muzzle - Vector2.ONE * (1 + charge * 2), Vector2.ONE * (2 + charge * 4)), tint)
 		if b.flash > 0.6: draw_circle(p + Vector2.from_angle(b.aim) * 18, 4 * b.flash, TEAM_COLORS[b.color])
+		if b.kind == "turret" and b.flash > 0:
+			draw_arc(p + Vector2.from_angle(b.aim) * 18, 3 + (1 - b.flash) * 18, 0, TAU, 24, Color("ffd49a", b.flash * 0.7), line_width())
+		if b.kind == "turret" and (b.get("shield", false) or b.pulse > 0):
+			var alpha: float = 1.0 if b.get("shield", false) else clampf(b.pulse / 0.65, 0, 1)
+			var shield_rect := Rect2(p - Vector2.ONE * (dimension / 2 + 3), Vector2.ONE * (dimension + 6))
+			preload("res://scripts/drawing_style.gd").draw_shield(self, shield_rect, alpha, line_width())
 		if not BUILDINGS[b.kind].get("ammo_free", false):
 			var ammo_rect := ammo_bar_rect(cell)
 			draw_rect(ammo_rect, Color("0b0809"))
-			draw_rect(Rect2(ammo_rect.position, Vector2(ammo_rect.size.x * clampf(float(b.ammo) / 80, 0, 1), 3)), RESOURCE_COLORS[BUILDINGS[b.kind].ammo])
+			draw_rect(Rect2(ammo_rect.position, Vector2(ammo_rect.size.x * clampf(float(b.ammo) / turret_ammo_capacity(b.kind), 0, 1), 3)), RESOURCE_COLORS[BUILDINGS[b.kind].ammo])
 	elif b.kind == "healer" and b.pulse > 0:
 		draw_arc(p, TILE * 2 * (1 - b.pulse / 0.65), 0, TAU, 48, Color(RESOURCE_COLORS.verdite, b.pulse), line_width())
 	elif b.kind == "forge":
 		draw_rect(Rect2(p + Vector2(-21, 23), Vector2(42 * b.progress / 3.0, 3)), RESOURCE_COLORS.alloy)
 		var out := cell_center(output_target(cell, b))
 		draw_line(p, p.lerp(out, 0.65), Color(TEAL, 0.4), line_width())
-	if b.hp < b.max_hp:
+	if b.kind == "wall" or b.hp < b.max_hp:
 		draw_rect(Rect2(p + Vector2(-13, -dimension / 2 - 5), Vector2(26, 3)), Color("25191a"))
 		draw_rect(Rect2(p + Vector2(-13, -dimension / 2 - 5), Vector2(26 * maxf(0, b.hp) / b.max_hp, 3)), TEAL if b.hp / b.max_hp > 0.4 else RED)
 	if b.flash > 0 and not is_turret(b.kind): draw_rect(Rect2(p + rect.position, rect.size), Color(TEAL if b.kind == "core" else RED, b.flash * 0.3))
 func _draw_enemy(enemy: Dictionary) -> void:
-	var p: Vector2 = enemy.pos
+	var p := enemy_visual_position(enemy)
 	var dimension: float = Content.ENEMY_TYPES[enemy.kind].size
 	draw_set_transform(p, enemy.angle)
 	draw_texture_rect(textures[enemy.kind + "_body"], Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false, TEAM_COLORS[enemy.color])
@@ -1563,6 +1670,24 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	draw_set_transform(p - Vector2.from_angle(aim) * recoil * (4.0 if enemy.kind == "siege" else (3.0 if enemy.kind == "bulwark" else 1.5)), aim)
 	draw_texture_rect(textures[enemy.kind + "_gun"], Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false, TEAM_COLORS[enemy.color])
 	draw_set_transform(Vector2.ZERO)
+	if enemy.kind in ["bulwark", "siege"] and enemy.get("charge", 0.0) > 0:
+		var charge: float = enemy.charge
+		var muzzle := (p + Vector2.from_angle(aim) * dimension * 0.4).round()
+		var tint: Color = TEAM_COLORS[enemy.color].lightened(0.5)
+		if enemy.kind == "siege":
+			var axis := Vector2.from_angle(aim)
+			var side := axis.orthogonal()
+			for rail in [-1, 1]:
+				var rail_start: Vector2 = (p - axis * 8 + side * rail * 8).round()
+				var rail_end: Vector2 = (p + axis * dimension * 0.4 + side * rail * (8 - charge * 4)).round()
+				draw_line(rail_start, rail_end, Color(tint, charge), line_width())
+		var pulse := 0.7 + 0.3 * sin(charge * TAU * 8)
+		draw_circle(muzzle, 3 + charge * 8, Color(tint, charge * 0.18))
+		draw_circle(muzzle, 1 + charge * 4, tint.lerp(Color.WHITE, charge * pulse))
+		for segment in ceili(charge * 8):
+			var angle := segment * TAU / 8 + charge * TAU
+			var point := (muzzle + Vector2.from_angle(angle) * (12 - charge * 5)).round()
+			draw_rect(Rect2(point - Vector2.ONE, Vector2.ONE * 2), Color(tint, 0.4 + charge * 0.6))
 	if recoil > 0.7:
 		draw_circle(p + Vector2.from_angle(aim) * dimension * 0.4, (4.5 if enemy.kind == "siege" else (3.5 if enemy.kind == "bulwark" else 2.0)) * recoil, TEAM_COLORS[enemy.color].lightened(0.65))
 	if enemy.hp < enemy.max_hp:
@@ -1580,8 +1705,8 @@ func finish_affinity(affinity: String) -> bool:
 
 # Expedition configuration and logistics limits.
 @export var base_material_capacity: int = 500
-@export var initial_wave_delay: float = 300.0
-@export var inter_wave_delay: float = 300.0
+@export var initial_wave_delay: float = 180.0
+@export var inter_wave_delay: float = 180.0
 var wave_timer := 65.0
 var current_core := CORE
 var cores: Array[Vector2i] = [CORE]
@@ -1605,15 +1730,12 @@ func building_cost(kind: String, count: int = -1, cell: Vector2i = INVALID, glob
 	if core == INVALID: core = current_core
 	var n: int = counts_in_core(core).get(kind, 0) if count < 0 else count
 	if kind == "belt" and not tutorial.extractor_connected_once: return {"copper": maxi(1, roundi(core_resource_multiplier(core, "copper")))}
-	var rate := 1.25 if is_turret(kind) else (1.01 if kind == "belt" else (1.05 if kind == "wall" else 1.10))
+	var rate := 1.10 if is_turret(kind) else (1.01 if kind == "belt" else (1.05 if kind == "wall" else 1.10))
 	var multiplier := pow(rate, n)
 	var result: Dictionary = {}
 	for resource in BUILDINGS[kind].cost:
 		var factor: float = pow(rate, owned_building_counts().get(kind, 0) if global_count < 0 else global_count) if resource == "scrap" else multiplier
 		result[resource] = maxi(1, roundi(BUILDINGS[kind].cost[resource] * core_resource_multiplier(core, resource) * factor))
-	if kind in ["drill", "solar"] and inventory.copper < result.get("copper", 0):
-		var iron_price := maxi(1, roundi(BUILDINGS[kind].cost.copper * core_resource_multiplier(core, "iron") * multiplier))
-		if inventory.iron >= iron_price: result = {"iron": iron_price}
 	return result
 
 func core_resource_multiplier(core: Vector2i, resource: String) -> float:
@@ -1646,7 +1768,7 @@ func material_capacity(resource: String) -> int:
 	if debug_resource_capacity: return 10000
 	var capacity := base_copper_capacity if resource == "copper" else (40 if resource == "iron" else base_material_capacity)
 	for b in buildings.values():
-		if b.kind != "core" and BUILDINGS[b.kind].get("stores", "") == resource: capacity += 50 if resource == "copper" else 500
+		if not b.get("pending", false) and b.kind != "core" and BUILDINGS[b.kind].get("stores", "") == resource: capacity += 50 if resource == "copper" else 500
 	return capacity
 func add_resource(resource: String, amount: int) -> int:
 	var accepted := amount if resource == "scrap" else mini(amount, maxi(0, material_capacity(resource) - int(inventory[resource])))
@@ -1714,11 +1836,17 @@ func _plan_wave() -> void:
 	wave_rng.state = forecast.rng_state
 	spawn_remaining = spawn_queue.size()
 func _complete_wave(number: int = -1) -> void:
+	activate_pending_buildings()
 	if number < 0: number = wave
 	var completed_gates: Array = pending_waves.get(number, [])
 	pending_waves.erase(number)
 	wave_in_progress = wave_active()
 	tutorial.on_wave_completed(number)
+	if researched.has("slugger_shield"):
+		for building in buildings.values():
+			if building.kind == "turret":
+				building.shield = true
+				building.pulse = 0.0
 	var advanced := false
 	var gates: Array = active_spawners.duplicate() if completed_gates.is_empty() else []
 	for index in completed_gates: gates.append(spawners[index])
@@ -1736,7 +1864,7 @@ func _complete_wave(number: int = -1) -> void:
 				cores.append(cell)
 				current_core = cell
 				wave = 0
-				wave_timer = 600.0
+				wave_timer = 360.0
 				core_health = buildings[cell].hp
 				tutorial.on_new_core(cell)
 				paused = true
@@ -1752,7 +1880,8 @@ func _complete_wave(number: int = -1) -> void:
 		victory_shown = true
 		paused = true
 		hud.show_outcome(true)
-	if not saves.capture(): toast(saves.last_error)
+func turret_ammo_capacity(kind: String) -> int:
+	return 8 if kind == "turret" else 80
 func last_round_active() -> bool:
 	for spawner in active_spawners:
 		var scheduled: int = spawner.waves_completed
@@ -1891,7 +2020,7 @@ func unlocked_colors(kind: String) -> Array[String]:
 
 func _add_color_tech() -> void:
 	for id in TECH:
-		if id not in ["barriers", "conveyor_speed", "turret_range", "copper_storage", "auto_scrap", "build_hotkeys"]: TECH[id].pos.y += 310
+		if id not in ["barriers", "conveyor_speed", "turret_range", "copper_storage", "auto_scrap", "build_hotkeys", "time_speed"]: TECH[id].pos.y += 310
 	var row := 0
 	for kind in ["solar", "turret", "repeater", "cannon"]:
 		var parent: String = "conveyor_speed" if kind == "solar" else BUILDINGS[kind].tech
@@ -1910,7 +2039,7 @@ func owned_building_counts() -> Dictionary:
 		if b.kind != "core": counts[b.kind] = counts.get(b.kind, 0) + 1
 	return counts
 func conveyor_items_per_second(kind: String = "belt") -> float:
-	return 0.5 if kind in ["belt", "splitter"] and researched.has("conveyor_speed") else 0.25
+	return 1.0 if kind in ["belt", "splitter"] and researched.has("conveyor_speed") else 0.5
 func turret_range(kind: String) -> float:
 	return float(BUILDINGS[kind].range) + (TILE * 2 if kind == "solar" and researched.has("turret_range") else 0)
 
@@ -1956,15 +2085,85 @@ func randomize_rock_tiles() -> void:
 func advance_logistics(duration: float) -> void:
 	var remaining := duration
 	while remaining > 0.000001:
-		var step := minf(0.25, remaining)
+		var step := minf(0.05, remaining)
 		elapsed += step
 		for cell in buildings:
 			var building: Dictionary = buildings[cell]
+			if building.get("pending", false): continue
 			if building.kind != "drill": continue
-			building.progress = minf(10.0, building.progress + step * (1.3 if researched.has("mining") else 1.0))
-			if building.progress >= 9.99999 and building.item == "":
+			building.progress = minf(5.0, building.progress + step * (1.3 if researched.has("mining") else 1.0))
+			if building.progress >= 4.99999 and building.item == "":
 				building.item = ores.get(cell, "copper")
 				building.travel = 0.0
 				building.progress = 0.0
 		_update_items(step)
 		remaining -= step
+
+func manual_mining_interval(_resource: String) -> float:
+	return 1.0
+var building_centers: Dictionary = {}
+var enemy_visual_offsets: Dictionary = {}
+func enemy_visual_position(enemy: Dictionary) -> Vector2:
+	return enemy.pos + enemy_visual_offsets.get(enemy.info_id, Vector2.ZERO)
+func update_enemy_visual_offsets(dt: float) -> void:
+	var groups: Dictionary = {}
+	var live: Dictionary = {}
+	var blend := 1.0 - exp(-10.0 * maxf(0, dt))
+	for enemy in enemies:
+		if enemy.hp <= 0: continue
+		live[enemy.info_id] = true
+		var velocity: Vector2 = enemy.get("velocity", Vector2.ZERO)
+		if velocity.length_squared() > 0.25:
+			var offset: Vector2 = enemy_visual_offsets.get(enemy.info_id, Vector2.ZERO)
+			enemy_visual_offsets[enemy.info_id] = offset.lerp(Vector2.ZERO, blend)
+			continue
+		var tile := Vector2i((enemy.pos / TILE).floor())
+		if not groups.has(tile): groups[tile] = []
+		groups[tile].append(enemy)
+	for tile in groups:
+		var group: Array = groups[tile]
+		group.sort_custom(func(a: Dictionary, b: Dictionary): return a.info_id < b.info_id)
+		var center := Vector2.ZERO
+		for enemy in group: center += enemy.pos
+		center /= group.size()
+		for index in group.size():
+			var enemy: Dictionary = group[index]
+			var target := Vector2.ZERO
+			if group.size() > 1:
+				target = center + Vector2.from_angle(-PI / 2 + TAU * index / group.size()) * 16.0 - enemy.pos
+			var previous: Vector2 = enemy_visual_offsets.get(enemy.info_id, Vector2.ZERO)
+			enemy_visual_offsets[enemy.info_id] = previous.lerp(target, blend)
+	for id in enemy_visual_offsets.keys():
+		if not live.has(id): enemy_visual_offsets.erase(id)
+var has_pending_construction := false
+func activate_pending_buildings() -> void:
+	if not has_pending_construction or not enemies.is_empty() or spawn_remaining > 0 or not spawn_queue.is_empty(): return
+	for building in buildings.values(): building.pending = false
+	has_pending_construction = false
+	enemy_navigation.invalidate(self)
+	queue_redraw()
+func draw_pending_building(cell: Vector2i, building: Dictionary) -> void:
+	var dimension: float = TILE * footprint_size(building.kind)
+	var center := building_center(cell).round()
+	var texture: Texture2D = textures.solar_base if building.kind == "solar" else textures[building.kind]
+	if building.kind == "belt" and not researched.has("conveyor_speed"): texture = textures.belt_dark
+	if building.get("tunnel_role", "") != "": texture = textures["tunnel_" + building.tunnel_role]
+	draw_set_transform(center, building.dir * PI / 2.0 if building.kind == "belt" else 0.0)
+	preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension))
+	draw_set_transform(Vector2.ZERO)
+	if is_turret(building.kind):
+		draw_set_transform(center, building.aim)
+		draw_texture_rect(textures.solar_gun if building.kind == "solar" else textures.barrel, Rect2(-16, -16, 32, 32), false, Color(1, 1, 1, 0.33))
+		draw_set_transform(Vector2.ZERO)
+
+func handle_savestate_shortcut(event: InputEvent) -> bool:
+	if not event is InputEventKey or not event.pressed or event.echo: return false
+	if event.keycode < KEY_1 or event.keycode > KEY_9 or event.alt_pressed: return false
+	var slot: int = event.keycode - KEY_1 + 1
+	if event.ctrl_pressed and not event.shift_pressed:
+		saves.load_slot(slot)
+		return true
+	if event.shift_pressed and not event.ctrl_pressed:
+		if not saves.save_slot(slot): toast("Could not save slot %d" % slot)
+		return true
+	return false

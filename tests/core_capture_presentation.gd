@@ -1,4 +1,4 @@
-﻿extends "res://tests/iron_supply_zoom.gd"
+extends "res://tests/iron_supply_zoom.gd"
 func run() -> void:
 	fresh()
 	game.fog_disabled = false
@@ -13,10 +13,13 @@ func run() -> void:
 	var previous: Dictionary = game.visible_cells.duplicate()
 	var camera_start: Vector2 = game.camera.position
 	game._complete_wave()
+	# A manual snapshot here tests cinematic-safe restoration; automatic saves now wait for launch.
+	game.saves.capture()
 	var effect = game.capture_effect
 	check(effect.active and effect.banner.visible and effect.banner.text == "Core secured", "Core conversion starts the capture banner and pulse")
-	check(game.paused and game.wave_timer == 600, "Capture preserves paused ten-minute preparation")
+	check(game.paused and game.wave_timer == 360, "Capture preserves paused six-minute preparation")
 	check(game.saves.load_snapshot(game.saves.current)[6] == effect.camera_target(), "Capture checkpoint focuses new core without replaying cinematic")
+	check(game.saves.load_snapshot(game.saves.current)[7] == Vector2.ONE, "Capture checkpoint records the final 100 percent zoom")
 	check(effect.origin == game.cell_center(game.current_core) and effect.old_visibility == previous, "Capture records new core and prior revealed terrain")
 	var newly_revealed: Vector2i = game.INVALID
 	for cell in game.visible_cells:
@@ -32,7 +35,10 @@ func run() -> void:
 	var halfway: Vector2 = game.camera.position
 	check(halfway.distance_to(camera_start) > 0 and halfway.distance_to(effect.camera_target()) > 1, "Camera eases through an intermediate position")
 	effect.advance(0.7)
-	check(game.camera.position.distance_to(effect.camera_target()) < 1, "Camera finishes centered on captured core")
+	check(game.camera.position.distance_to(effect.pan_points[1]) < 1, "Camera reaches the first active gate before the core")
+	check(effect.pan_points.size() == 2 and game.camera.zoom == Vector2.ONE, "Capture pans directly to the core at 100 percent zoom")
+	effect.advance(effect.tour_duration() - effect.PAN_DURATION)
+	check(game.camera.position.distance_to(effect.camera_target()) < 1, "Tour finishes centered on captured core")
 	effect.advance(1.7)
 	check(not effect.active and game.is_cell_visible(newly_revealed) and game.paused, "Reveal completes without unpausing simulation")
 	check(game.audio.streams.has("core_capture") and game.audio.streams.core_capture.get_length() > 2, "Capture has its own generated deep chime")
@@ -47,5 +53,6 @@ func run() -> void:
 	print("CORE CAPTURE PRESENTATION CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
 
 

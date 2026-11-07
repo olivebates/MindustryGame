@@ -1,9 +1,9 @@
-﻿extends RefCounted
+extends RefCounted
 ## Compact wave checkpoints; future history is removed only on resume.
-const VERSION := 10
+const VERSION := 13
 const FIELDS := ["inventory", "researched", "discovered_resources", "wave", "wave_timer", "kills", "delivered", "elapsed", "speed", "current_core", "cores", "placement_counts", "base_material_capacity", "core_health", "won", "lost", "victory_shown", "current_wave_color", "next_wave_color", "debug_unlock_step", "debug_resource_capacity", "base_copper_capacity", "enemies", "spawn_queue", "spawn_remaining", "spawn_timer", "wave_in_progress", "pending_waves"]
 const TUTORIAL_FIELDS := ["stage", "menu_clicked", "building_clicked", "extractors_ever_built", "turrets_ever_built", "waves_started", "tech_available", "tech_opened", "skipped", "paused_once", "second_wave_elapsed", "extractor_connected_once", "structures_opened_once", "first_damage_taken", "info_hover_time", "collected_tutorial_scrap", "barrier_tree_closed", "inspected_things", "first_wave_completed", "speed_toggled", "designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "demolish_entered", "demolish_completed", "onboarding_completed", "category_visits", "pause_exit_completed", "introduced_shortcuts", "ui_revealed", "next_core_target", "next_core_stage", "ammo_tutorial_target", "ammo_tutorial_stage"]
-const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color"]
+const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color", "shield", "pending"]
 var game: Node2D
 var directory := "user://wave_saves"
 var entries: Array[Dictionary] = []
@@ -11,6 +11,7 @@ var current := -1
 var initial_checkpoint: Array = []
 var pending_branch := false
 var last_error := ""
+var quick_slots_directory := ""
 var learning_directory := ""
 var learned_progress: Dictionary = {}
 var learned_resources: Dictionary = {}
@@ -124,12 +125,22 @@ func snapshot() -> Array:
 	var gates: Array = []
 	for gate in game.spawners: gates.append([gate.waves_completed, gate.converted, gate.prepared_color])
 	var camera_position: Vector2 = game.capture_effect.camera_target() if is_instance_valid(game.capture_effect) and game.capture_effect.active else game.camera.position
-	return [VERSION, values, rows, progress, gates, game.scraps.duplicate(true), camera_position, game.camera.zoom, game.rng.state, game.wave_rng.state]
-func capture(checkpoint: Array = []) -> bool:
+	var saved_zoom: Vector2 = Vector2.ONE if is_instance_valid(game.capture_effect) and game.capture_effect.active else Vector2.ONE * game.camera_zoom_target
+	return [VERSION, values, rows, progress, gates, game.scraps.duplicate(true), camera_position, saved_zoom, game.rng.state, game.wave_rng.state]
+func capture(checkpoint: Array = [], checkpoint_wave: int = -1) -> bool:
 	if pending_branch: return false
 	last_error = ""
 	var data: Array = snapshot() if checkpoint.is_empty() else checkpoint
-	var saved_wave: int = maxi(1, data[1][3])
+	var saved_wave: int = maxi(1, int(data[1][3]) if checkpoint_wave < 0 else checkpoint_wave)
+	var stamp := int(Time.get_unix_time_from_system())
+	var name := "%06d_%03d_%d.ews" % [entries.size(), saved_wave, stamp]
+	if not write_snapshot(directory.path_join(name), data): return false
+	entries.append({"file": name, "wave": saved_wave, "time": stamp})
+	current = entries.size() - 1
+	capture_preview(name, data)
+	return true
+
+func write_snapshot(path: String, data: Array) -> bool:
 	var raw := var_to_bytes(data)
 	var packed := PackedByteArray()
 	var mode := FileAccess.COMPRESSION_ZSTD
@@ -138,12 +149,10 @@ func capture(checkpoint: Array = []) -> bool:
 		if packed.is_empty() or compressed.size() < packed.size():
 			packed = compressed
 			mode = candidate
-	if DirAccess.make_dir_recursive_absolute(directory) != OK:
-		last_error = "Could not create save directory: " + directory
+	if DirAccess.make_dir_recursive_absolute(path.get_base_dir()) != OK:
+		last_error = "Could not create save directory: " + path.get_base_dir()
 		return false
-	var stamp := int(Time.get_unix_time_from_system())
-	var name := "%06d_%03d_%d.ews" % [entries.size(), saved_wave, stamp]
-	var file := FileAccess.open(directory.path_join(name + ".tmp"), FileAccess.WRITE)
+	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
 	if file == null:
 		last_error = "Could not write wave save."
 		return false
@@ -153,16 +162,73 @@ func capture(checkpoint: Array = []) -> bool:
 	file.store_buffer(checksum(raw))
 	file.store_buffer(packed)
 	file.close()
-	if DirAccess.rename_absolute(directory.path_join(name + ".tmp"), directory.path_join(name)) != OK:
+	if DirAccess.rename_absolute(path + ".tmp", path) != OK:
 		last_error = "Could not finish wave save."
 		return false
-	entries.append({"file": name, "wave": saved_wave, "time": stamp})
-	current = entries.size() - 1
-	capture_preview(name, data)
 	return true
 
 func preview_path(name: String) -> String:
-	return directory.path_join(name.trim_suffix(".ews") + ".webp")
+	return directory.path_join(name.trim_suffix(".ews") + ".framed.webp")
+
+func slot_path(slot: int) -> String:
+	# Numbered slots survive starting a new expedition. Test histories stay isolated.
+	var root := directory.path_join("slots") if directory.begins_with("res://") else "user://quick_slots"
+	if quick_slots_directory != "": root = quick_slots_directory
+	return root.path_join("%d.ews" % slot)
+
+func find_slot(slot: int) -> String:
+	var path := slot_path(slot)
+	if FileAccess.file_exists(path): return path
+	var legacy := directory.path_join("slots/%d.ews" % slot)
+	if FileAccess.file_exists(legacy): return legacy
+	if directory.begins_with("res://"): return path
+	var latest := 0
+	for folder in DirAccess.get_directories_at("user://"):
+		if not folder.begins_with("wave_saves"): continue
+		var candidate := "user://".path_join(folder).path_join("slots/%d.ews" % slot)
+		if FileAccess.file_exists(candidate) and FileAccess.get_modified_time(candidate) >= latest:
+			latest = FileAccess.get_modified_time(candidate)
+			path = candidate
+	return path
+
+func save_slot(slot: int) -> bool:
+	if slot < 1 or slot > 9 or game.lost: return false
+	var path := slot_path(slot)
+	if not write_snapshot(path, snapshot()): return false
+	var reference := FileAccess.open(path + ".checkpoint", FileAccess.WRITE)
+	if reference != null:
+		reference.store_string(JSON.stringify([directory, entries[current].file if current >= 0 and current < entries.size() else ""]))
+	game.toast("Saved slot %d" % slot)
+	return true
+
+func load_slot(slot: int) -> bool:
+	if slot < 1 or slot > 9: return false
+	var path := find_slot(slot)
+	var data := read_snapshot(path)
+	if data.is_empty():
+		game.toast("No valid save in slot %d" % slot)
+		return false
+	var checkpoint := FileAccess.get_file_as_string(path + ".checkpoint") if FileAccess.file_exists(path + ".checkpoint") else ""
+	var metadata = JSON.parse_string(checkpoint) if checkpoint.begins_with("[") else null
+	var source := directory
+	if metadata is Array and metadata.size() == 2:
+		source = str(metadata[0])
+		checkpoint = str(metadata[1])
+	elif path.contains("/slots/"):
+		source = path.get_base_dir().get_base_dir()
+	if source != directory:
+		directory = source
+		read_index()
+		if directory.begins_with("user://"): write_active_directory()
+	var index := -1
+	for i in entries.size():
+		if entries[i].file == checkpoint: index = i
+	if not restore_snapshot(data, index): return false
+	if is_instance_valid(game.hud.modal):
+		game.hud.modal_was_paused = true
+		game.hud.close_modal()
+	game.toast("Loaded slot %d" % slot)
+	return true
 
 func capture_preview(name: String, data: Array = []) -> void:
 	var destination := preview_path(name)
@@ -181,9 +247,10 @@ func capture_preview(name: String, data: Array = []) -> void:
 	drawing.set_script(load("res://scripts/save_preview.gd"))
 	drawing.material = game.material
 	drawing.configure(game, data)
-	var view_scale: float = 256.0 / (41.0 * game.TILE)
+	var bounds: Rect2 = drawing.capture_bounds(game)
+	var view_scale: float = 256.0 / bounds.size.x
 	drawing.scale = Vector2.ONE * view_scale
-	drawing.position = -Vector2((drawing.core - Vector2i(20, 20)) * game.TILE) * view_scale
+	drawing.position = -bounds.position * view_scale
 	viewport.add_child(drawing)
 	game.add_child(viewport)
 	await RenderingServer.frame_post_draw
@@ -192,7 +259,10 @@ func capture_preview(name: String, data: Array = []) -> void:
 	if is_instance_valid(viewport): viewport.queue_free()
 func load_snapshot(index: int) -> Array:
 	if index < 0 or index >= entries.size(): return []
-	var file := FileAccess.open(directory.path_join(entries[index].file), FileAccess.READ)
+	return read_snapshot(directory.path_join(entries[index].file))
+
+func read_snapshot(snapshot_path: String) -> Array:
+	var file := FileAccess.open(snapshot_path, FileAccess.READ)
 	if file == null or file.get_length() < 13: return []
 	if file.get_buffer(4).get_string_from_ascii() != "EWS1": return []
 	var mode := file.get_8()
@@ -268,7 +338,16 @@ func load_snapshot(index: int) -> Array:
 				piece.velocity = Vector2.ZERO
 				piles.append(piece)
 		data[5] = piles
-		data[0] = VERSION
+		data[0] = 10
+	if data[0] == 10: migrate_fast_balance(data)
+	if data[0] == 11:
+		for row in data[2]:
+			if row.size() == BUILD_FIELDS.size() - 1: row.append(false)
+		data[0] = 12
+	if data[0] == 12:
+		for row in data[2]:
+			if row.size() == BUILD_FIELDS.size(): row.append(false)
+		data[0] = 13
 	if data[0] != VERSION: return []
 	if data[1].size() != FIELDS.size() or data[3].size() != TUTORIAL_FIELDS.size() or data[4].size() != game.spawners.size(): return []
 	for row in data[2]:
@@ -277,6 +356,9 @@ func load_snapshot(index: int) -> Array:
 	return data
 func restore(index: int) -> bool:
 	var data := load_snapshot(index)
+	return restore_snapshot(data, index)
+
+func restore_snapshot(data: Array, index: int) -> bool:
 	if data.is_empty():
 		last_error = "This save could not be read."
 		return false
@@ -289,16 +371,21 @@ func restore(index: int) -> bool:
 		var value = game.tutorial.get(field)
 		learned[field] = value.duplicate(true) if value is Dictionary else value
 	game.cancel_build_selection(false)
+	game.enemy_visual_offsets.clear()
 	game.buildings.clear()
 	game.occupied.clear()
 	for i in FIELDS.size(): game.set(FIELDS[i], data[1][i])
-	game.speed = 5 if game.speed > 1 else 1
+	game.speed = 3 if game.speed > 1 and game.researched.has("time_speed") else 1
 	game.discovered_resources.merge(known_resources, true)
 	game.placement_counts.clear()
 	for row in data[2]:
 		var cell: Vector2i = row[0]
 		game._add_building(cell, row[1], row[2])
 		for i in BUILD_FIELDS.size(): game.buildings[cell][BUILD_FIELDS[i]] = row[i + 1]
+		if game.is_turret(game.buildings[cell].kind):
+			game.buildings[cell].ammo = mini(int(game.buildings[cell].ammo), game.turret_ammo_capacity(game.buildings[cell].kind))
+		if game.buildings[cell].kind == "belt": game.buildings[cell].pending = false
+		if game.buildings[cell].get("pending", false): game.has_pending_construction = true
 	for i in TUTORIAL_FIELDS.size(): game.tutorial.set(TUTORIAL_FIELDS[i], data[3][i])
 	# Learning belongs to the player, rather than to a checkpoint's world state.
 	for field in TUTORIAL_FIELDS:
@@ -338,6 +425,7 @@ func restore(index: int) -> bool:
 	game.hud.modal_was_paused = true
 	game.rollback_paused = true
 	current = index
+	mark_played(index)
 	pending_branch = index < entries.size() - 1
 	if game.cores.size() == 2: game.tutorial.ui_revealed.slugger_rewind_hint = true
 	game.hud.research_signature = -1
@@ -345,6 +433,15 @@ func restore(index: int) -> bool:
 	game.hud.play_rewind_effect(rewind_frame)
 	game.queue_redraw()
 	return true
+
+func mark_played(index: int) -> void:
+	if index < 0 or index >= entries.size(): return
+	var file := FileAccess.open(directory.path_join(entries[index].file + ".played"), FileAccess.WRITE)
+	if file != null: file.store_64(int(Time.get_unix_time_from_system()))
+
+func last_played(index: int) -> int:
+	var file := FileAccess.open(directory.path_join(entries[index].file + ".played"), FileAccess.READ)
+	return int(file.get_64()) if file != null and file.get_length() == 8 else int(entries[index].time)
 
 func timeline_events() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -389,6 +486,8 @@ func commit_branch() -> bool:
 			last_error = "Could not remove a later save."
 			return false
 		if FileAccess.file_exists(preview_path(entries[i].file)): DirAccess.remove_absolute(preview_path(entries[i].file))
+		var played_path: String = directory.path_join(entries[i].file + ".played")
+		if FileAccess.file_exists(played_path): DirAccess.remove_absolute(played_path)
 		entries.remove_at(i)
 	pending_branch = false
 	return true
@@ -409,3 +508,19 @@ func write_active_directory() -> void:
 
 
 
+
+
+func migrate_fast_balance(data: Array) -> void:
+	for row in data[2]:
+		var kind: String = row[1]
+		if kind == "drill": row[BUILD_FIELDS.find("progress") + 1] /= 5.0
+		if game.is_turret(kind): row[BUILD_FIELDS.find("cooldown") + 1] /= 5.0
+		if kind == "wall" and row[BUILD_FIELDS.find("max_hp") + 1] > game.BUILDINGS.wall.hp * 2:
+			row[BUILD_FIELDS.find("hp") + 1] /= 20.0
+			row[BUILD_FIELDS.find("max_hp") + 1] /= 20.0
+	for enemy in data[1][FIELDS.find("enemies")]:
+		enemy.speed = game.Content.ENEMY_TYPES[enemy.kind].speed
+		enemy.cooldown /= 5.0
+	data[1][FIELDS.find("wave_timer")] *= 0.4
+	data[1][FIELDS.find("speed")] = 1
+	data[0] = 11

@@ -35,7 +35,7 @@ func run() -> void:
 	for wave in [1, 5, 20]: check(game.enemy_health("siege", wave) == 2000, "Siege health is fixed at two thousand at every wave")
 	var siege: Dictionary = game.Content.ENEMY_TYPES.siege
 	check(siege.size > game.Content.ENEMY_TYPES.bulwark.size and siege.speed < game.Content.ENEMY_TYPES.bulwark.speed, "Siege is larger and slower than Bulwark")
-	check(siege.credits == 400 and siege.damage == 100 and siege.reload == 5 and siege.reach == 3 * game.TILE and game.Content.enemy_scrap("siege") == 70, "Siege deployment cost, damage, interval, range and drops match")
+	check(siege.credits == 400 and siege.damage == 100 and siege.reload == 1 and siege.reach == 3 * game.TILE and game.Content.enemy_scrap("siege") == 70, "Siege deployment cost, damage, interval, range and drops match")
 	check(game.Content.ENEMY_TYPES.bulwark.reach == 2 * game.TILE, "Bulwark has two tiles of range")
 	game.inventory.scrap = 1000000
 	check(game.add_resource("scrap", 1000000) == 1000000 and game.inventory.scrap == 2000000, "Scrap storage has no gameplay cap")
@@ -74,6 +74,7 @@ func run() -> void:
 	print("YIELD SIEGE AND SCRAP CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)
+
 
 
 

@@ -15,7 +15,94 @@ static func age_text(seconds: int) -> String:
 	if minutes > 0: parts.append("%sm" % preload("res://scripts/display_numbers.gd").format(minutes))
 	return " ".join(parts) + " ago"
 func show_browser(_died: bool = false) -> void:
-	refresh_timeline()
+	hud.game.tutorial.on_wave_menu_opened()
+	var content: Panel = hud.modal_panel(Vector2(920, 430))
+	hud.label(content, "Wave saves", Vector2(24, 16), Vector2(860, 38), 26)
+	var scroll := ScrollContainer.new()
+	scroll.set_script(preload("res://scripts/save_timeline_scroll.gd"))
+	scroll.name = "SaveTimeline"
+	scroll.position = Vector2(24, 66)
+	scroll.size = Vector2(872, 244)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var slider := HSlider.new()
+	slider.name = "TimelineSlider"
+	slider.position = Vector2(24, 322)
+	slider.size = Vector2(872, 28)
+	slider.max_value = 1.0
+	slider.step = 0.001
+	scroll.slider = slider
+	content.add_child(scroll)
+	var list := HBoxContainer.new()
+	list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	list.add_theme_constant_override("separation", 16)
+	scroll.add_child(list)
+	var group := -1
+	var now := int(Time.get_unix_time_from_system())
+	for index in hud.game.saves.entries.size():
+		var snapshot: Array = hud.game.saves.load_snapshot(index)
+		if snapshot.is_empty(): continue
+		var core_number: int = snapshot[1][10].size()
+		if core_number != group:
+			group = core_number
+			var header := VBoxContainer.new()
+			header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			header.custom_minimum_size = Vector2(64, 228)
+			list.add_child(header)
+			var title := Label.new()
+			title.text = "Core %02d" % group
+			title.add_theme_font_size_override("font_size", 12)
+			title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			header.add_child(title)
+			var line := VSeparator.new()
+			line.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			header.add_child(line)
+		var entry: Dictionary = hud.game.saves.entries[index]
+		var card: Button = hud.button(list, "", Vector2.ZERO, Vector2(200, 228), func():
+			if hud.game.lost:
+				if hud.game.saves.restore(index):
+					hud.game.tutorial.on_wave_menu_loaded()
+					hud.modal_was_paused = true
+					hud.close_modal()
+			else: confirm_restore(index, false, true)
+		)
+		card.custom_minimum_size = Vector2(200, 228)
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.set_meta("save_index", index)
+		# Grid containers own positioning; hover must never offset their children.
+		card.set_meta("save_card", true)
+		populate_thumbnail(card, entry.file, snapshot)
+		var caption: Label = hud.label(card, "Wave %s" % preload("res://scripts/display_numbers.gd").format(entry.wave), Vector2(8, 186), Vector2(184, 22), 17)
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var age: Label = hud.label(card, age_text(now - hud.game.saves.last_played(index)), Vector2(8, 210), Vector2(184, 18), 12, hud.MUTED)
+		age.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	content.add_child(slider)
+	scroll.call_deferred("scroll_to_newest")
+	if not hud.game.lost:
+		hud.button(content, "Cancel", Vector2(340, 366), Vector2(240, 44), hud.close_modal)
+	elif hud.game.saves.entries.is_empty():
+		hud.label(content, "No checkpoints available.", Vector2(24, 90), Vector2(860, 40), 18)
+
+func populate_thumbnail(card: Button, name: String, snapshot: Array) -> void:
+	var path: String = hud.game.saves.preview_path(name)
+	if not FileAccess.file_exists(path): await hud.game.saves.capture_preview(name, snapshot)
+	if not is_instance_valid(card) or not FileAccess.file_exists(path): return
+	var picture := Image.load_from_file(path)
+	if picture == null: return
+	var image := TextureRect.new()
+	image.texture = ImageTexture.create_from_image(picture)
+	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	image.position = Vector2(12, 8)
+	image.size = Vector2(176, 176)
+	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(image)
+
+func available() -> bool:
+	# Recognize expeditions saved before this reveal flag existed.
+	for gate in hud.game.spawners:
+		if gate.waves_completed >= 2: hud.game.tutorial.ui_revealed.wave_saves = true
+	return hud.game.tutorial.ui_revealed.get("wave_saves", false) or hud.game.tutorial.ui_revealed.get("loss_saves_revealed", false) or hud.game.tutorial.skipped or not hud.game.tutorial_enabled
 func add_milestone(index: int, x: float, kind: String, title: String, description: String) -> void:
 	var marker: Button = hud.button(timeline, "", Vector2(x - 9, -20), Vector2(18, 18), func():
 		begin_scrub()
@@ -29,7 +116,8 @@ func add_milestone(index: int, x: float, kind: String, title: String, descriptio
 	marker.set_meta("milestone", kind)
 	marker.set_meta("save_index", index)
 	milestone_markers.append(marker)
-func confirm_restore(index: int, restart: bool = false) -> void:
+func confirm_restore(index: int, restart: bool = false, from_browser: bool = false) -> void:
+	hud.game.tutorial.on_timeline_used()
 	if index < 0 or index >= hud.game.saves.entries.size(): return
 	var was_paused: bool = hud.modal_was_paused if is_instance_valid(hud.modal) else hud.game.paused
 	var content: Panel = hud.modal_panel(Vector2(560, 260))
@@ -42,6 +130,7 @@ func confirm_restore(index: int, restart: bool = false) -> void:
 	)
 	hud.button(content, "Confirm", Vector2(292, 192), Vector2(244, 44), func():
 		if hud.game.saves.restore(index):
+			if from_browser: hud.game.tutorial.on_wave_menu_loaded()
 			hud.modal_was_paused = true
 			hud.close_modal()
 			hud.game.paused = true
@@ -118,7 +207,7 @@ func build_timeline() -> void:
 	death_title.visible = false
 func refresh_timeline() -> void:
 	if not is_instance_valid(strip): return
-	strip.visible = not hud.expanded.visible and (hud.game.tutorial.pause_exit_completed or hud.game.tutorial.skipped or not hud.game.tutorial_enabled or hud.game.lost)
+	strip.visible = false
 	death_title.visible = hud.game.lost
 	if hud.game.lost:
 		hud.tutorial_prompt.anchor_top = 0.5
@@ -155,6 +244,7 @@ func refresh_timeline() -> void:
 		timeline.set_value_no_signal(maxi(0, hud.game.saves.current))
 		wave_caption.text = "Wave %s" % preload("res://scripts/display_numbers.gd").format(hud.game.saves.entries[selected].wave) if selected >= 0 and selected < count else ""
 func begin_scrub() -> void:
+	hud.game.tutorial.on_timeline_used()
 	if hud.game.saves.entries.is_empty(): return
 	dragging = true
 	original_camera = hud.game.camera.position
@@ -185,6 +275,7 @@ func finish_scrub() -> void:
 	hud.game.camera.position = original_camera
 	hud.game.paused = original_paused
 	if selected >= 0 and (selected != hud.game.saves.current or hud.game.lost or hud.game.wave_in_progress): confirm_restore(selected)
+
 
 
 
