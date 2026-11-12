@@ -1,9 +1,9 @@
 extends RefCounted
 ## Compact wave checkpoints; future history is removed only on resume.
-const VERSION := 13
+const VERSION := 17
 const FIELDS := ["inventory", "researched", "discovered_resources", "wave", "wave_timer", "kills", "delivered", "elapsed", "speed", "current_core", "cores", "placement_counts", "base_material_capacity", "core_health", "won", "lost", "victory_shown", "current_wave_color", "next_wave_color", "debug_unlock_step", "debug_resource_capacity", "base_copper_capacity", "enemies", "spawn_queue", "spawn_remaining", "spawn_timer", "wave_in_progress", "pending_waves"]
-const TUTORIAL_FIELDS := ["stage", "menu_clicked", "building_clicked", "extractors_ever_built", "turrets_ever_built", "waves_started", "tech_available", "tech_opened", "skipped", "paused_once", "second_wave_elapsed", "extractor_connected_once", "structures_opened_once", "first_damage_taken", "info_hover_time", "collected_tutorial_scrap", "barrier_tree_closed", "inspected_things", "first_wave_completed", "speed_toggled", "designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "demolish_entered", "demolish_completed", "onboarding_completed", "category_visits", "pause_exit_completed", "introduced_shortcuts", "ui_revealed", "next_core_target", "next_core_stage", "ammo_tutorial_target", "ammo_tutorial_stage"]
-const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color", "shield", "pending"]
+const TUTORIAL_FIELDS := ["stage", "menu_clicked", "building_clicked", "extractors_ever_built", "turrets_ever_built", "waves_started", "tech_available", "tech_opened", "skipped", "paused_once", "second_wave_elapsed", "extractor_connected_once", "structures_opened_once", "first_damage_taken", "info_hover_time", "collected_tutorial_scrap", "barrier_tree_closed", "inspected_things", "first_wave_completed", "speed_toggled", "designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "demolish_entered", "demolish_completed", "onboarding_completed", "category_visits", "pause_exit_completed", "introduced_shortcuts", "ui_revealed", "next_core_target", "next_core_stage", "ammo_tutorial_target", "ammo_tutorial_stage", "pink_lesson_source", "pink_lesson_target", "pink_lesson_kind"]
+const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color", "shield", "pending", "booster_type", "booster_count", "booster_used", "booster_fire_remaining"]
 var game: Node2D
 var directory := "user://wave_saves"
 var entries: Array[Dictionary] = []
@@ -16,7 +16,7 @@ var learning_directory := ""
 var learned_progress: Dictionary = {}
 var learned_resources: Dictionary = {}
 var learning_hash := 0
-const WORLD_TUTORIAL_FIELDS := ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target", "ammo_tutorial_target"]
+const WORLD_TUTORIAL_FIELDS := ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target", "ammo_tutorial_target", "pink_lesson_source", "pink_lesson_target", "pink_lesson_kind"]
 func merge_learning(destination: Dictionary, incoming: Dictionary) -> void:
 	for key in incoming:
 		var value = incoming[key]
@@ -45,6 +45,8 @@ func ensure_learning_loaded() -> void:
 			for index in TUTORIAL_FIELDS.size():
 				if TUTORIAL_FIELDS[index] not in WORLD_TUTORIAL_FIELDS: archived[TUTORIAL_FIELDS[index]] = data[3][index]
 			merge_learning(learned_progress, archived)
+			if not learned_progress.has("ui_revealed"): learned_progress.ui_revealed = {}
+			learned_progress.ui_revealed.max_core_count = maxi(int(learned_progress.ui_revealed.get("max_core_count", 1)), data[1][10].size())
 			learned_resources.merge(data[1][2], true)
 			if data[1][1].has("barriers"):
 				if not learned_progress.has("ui_revealed"): learned_progress.ui_revealed = {}
@@ -65,6 +67,7 @@ func apply_learning() -> void:
 	if game.tutorial.ui_revealed.get("barrier_building", false): game.researched.barriers = true
 func remember_learning() -> void:
 	ensure_learning_loaded()
+	game.tutorial.ui_revealed.max_core_count = maxi(int(game.tutorial.ui_revealed.get("max_core_count", 1)), game.cores.size())
 	var current: Dictionary = {}
 	for field in TUTORIAL_FIELDS:
 		if field not in WORLD_TUTORIAL_FIELDS: current[field] = game.tutorial.get(field)
@@ -117,6 +120,7 @@ func snapshot() -> Array:
 	var cells: Array = game.buildings.keys()
 	cells.sort()
 	for cell in cells:
+		if game.buildings[cell].kind == "teleporter" and game.buildings[cell].tunnel_pair == game.INVALID: continue
 		var row: Array = [cell]
 		for field in BUILD_FIELDS: row.append(game.buildings[cell].get(field))
 		rows.append(row)
@@ -342,12 +346,39 @@ func read_snapshot(snapshot_path: String) -> Array:
 	if data[0] == 10: migrate_fast_balance(data)
 	if data[0] == 11:
 		for row in data[2]:
-			if row.size() == BUILD_FIELDS.size() - 1: row.append(false)
+			if row.size() == 21: row.append(false)
 		data[0] = 12
 	if data[0] == 12:
 		for row in data[2]:
-			if row.size() == BUILD_FIELDS.size(): row.append(false)
+			if row.size() == 22: row.append(false)
 		data[0] = 13
+	if data[0] == 13:
+		data[1][0].pink = 0
+		data[3].append_array([game.INVALID, game.INVALID, ""])
+		for row in data[2]:
+			if row.size() == 23: row.append_array(["", 0])
+			row[BUILD_FIELDS.find("buffer") + 1].pink = 0
+		data[0] = 14
+	if data[0] == 14:
+		for row in data[2]: row.append_array([0.0, 0.0])
+		data[0] = 15
+	if data[0] == 15:
+		if data[1][21] == 40: data[1][21] = 100
+		for row in data[2]:
+			if row[1] == "solar":
+				var health: float = 30.0 * (1.25 if data[1][1].has("armor") else 1.0) + (10.0 if data[1][1].has("solar_health") else 0.0)
+				row[4] = health * clampf(float(row[4]) / maxf(1, float(row[5])), 0, 1)
+				row[5] = health
+			if row[1] == "refinery": row[8] = minf(10, float(row[8]) * 10.0 / 3.0)
+		data[0] = 16
+	if data[0] == 16:
+		for row in data[2]:
+			if row[1] == "core":
+				var health := 200.0 * (1.25 if data[1][1].has("armor") else 1.0)
+				row[4] = health * clampf(float(row[4]) / maxf(1, float(row[5])), 0, 1)
+				row[5] = health
+				if row[0] == data[1][9]: data[1][13] = row[4]
+		data[0] = 17
 	if data[0] != VERSION: return []
 	if data[1].size() != FIELDS.size() or data[3].size() != TUTORIAL_FIELDS.size() or data[4].size() != game.spawners.size(): return []
 	for row in data[2]:
@@ -364,6 +395,8 @@ func restore_snapshot(data: Array, index: int) -> bool:
 		return false
 	remember_learning()
 	var rewind_frame: Dictionary = game.hud.capture_rewind_frame()
+	game.cancel_final_wave_completion()
+	game.core_under_attack = false
 	if is_instance_valid(game.capture_effect): game.capture_effect.cancel()
 	var known_resources: Dictionary = game.discovered_resources.duplicate()
 	var learned: Dictionary = {}
@@ -375,13 +408,22 @@ func restore_snapshot(data: Array, index: int) -> bool:
 	game.buildings.clear()
 	game.occupied.clear()
 	for i in FIELDS.size(): game.set(FIELDS[i], data[1][i])
-	game.speed = 3 if game.speed > 1 and game.researched.has("time_speed") else 1
+	game.inventory.erase("scrap")
+	game.discovered_resources.erase("scrap")
+	game.researched.erase("auto_scrap")
+	game.speed = game.SPEEDUP_MULTIPLIER if game.speed > 1 and game.researched.has("time_speed") else 1
 	game.discovered_resources.merge(known_resources, true)
 	game.placement_counts.clear()
 	for row in data[2]:
 		var cell: Vector2i = row[0]
+		if row[1] == "scrap_store": continue
 		game._add_building(cell, row[1], row[2])
 		for i in BUILD_FIELDS.size(): game.buildings[cell][BUILD_FIELDS[i]] = row[i + 1]
+		if row[1] == "wall":
+			var wall: Dictionary = game.buildings[cell]
+			var health: float = game.BUILDINGS.wall.hp * (1.25 if game.researched.has("armor") else 1.0)
+			wall.hp = health * clampf(wall.hp / maxf(1.0, wall.max_hp), 0.0, 1.0)
+			wall.max_hp = health
 		if game.is_turret(game.buildings[cell].kind):
 			game.buildings[cell].ammo = mini(int(game.buildings[cell].ammo), game.turret_ammo_capacity(game.buildings[cell].kind))
 		if game.buildings[cell].kind == "belt": game.buildings[cell].pending = false
@@ -389,7 +431,7 @@ func restore_snapshot(data: Array, index: int) -> bool:
 	for i in TUTORIAL_FIELDS.size(): game.tutorial.set(TUTORIAL_FIELDS[i], data[3][i])
 	# Learning belongs to the player, rather than to a checkpoint's world state.
 	for field in TUTORIAL_FIELDS:
-		if field in ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target", "ammo_tutorial_target"]: continue
+		if field in WORLD_TUTORIAL_FIELDS: continue
 		var previous = learned[field]
 		var restored = game.tutorial.get(field)
 		if previous is bool: game.tutorial.set(field, previous or restored)
@@ -406,7 +448,7 @@ func restore_snapshot(data: Array, index: int) -> bool:
 		gate.visible = not gate.converted
 	apply_learning()
 	game.cancel_wave_warp()
-	game.scraps.assign(data[5])
+	game.scraps.clear()
 	game.camera.position = data[6]
 	game.set_camera_zoom(float(data[7].x))
 	game.rng.state = data[8]
@@ -418,6 +460,8 @@ func restore_snapshot(data: Array, index: int) -> bool:
 	game.inspected = game.INVALID
 	game.tutorial.guide_dirty = true
 	game.tutorial.refresh_ammo_guide()
+	game.tutorial.pink_guide_signature = -1
+	preload("res://scripts/pink_tutorial.gd").update(game.tutorial)
 	game._activate_spawners()
 	game.enemy_navigation.invalidate(game)
 	for enemy in game.enemies: game.enemy_info_counter = maxi(game.enemy_info_counter, int(enemy.get("info_id", 0)))

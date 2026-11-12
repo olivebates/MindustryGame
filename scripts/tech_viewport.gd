@@ -1,4 +1,4 @@
-﻿extends ScrollContainer
+extends ScrollContainer
 var graph: Control
 var canvas: Control
 var bounds := Rect2(Vector2.ZERO, Vector2.ONE)
@@ -7,6 +7,7 @@ var panning := false
 var left_pending := false
 var left_origin := Vector2.ZERO
 var pan_button := MOUSE_BUTTON_NONE
+var list_mode := false
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree(): return
 	var pointer := get_local_mouse_position()
@@ -28,7 +29,8 @@ func _input(event: InputEvent) -> void:
 			pan_button = event.button_index
 			get_viewport().set_input_as_handled()
 		elif inside and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-			zoom_at(1.12 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.12, pointer)
+			if list_mode: scroll_vertical += -80 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 80
+			else: zoom_at(1.12 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.12, pointer)
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion:
 		if left_pending and not panning and event.position.distance_to(left_origin) >= 6:
@@ -49,7 +51,8 @@ func clear_button_presses(node: Node) -> void:
 	for child in node.get_children(): clear_button_presses(child)
 func configure(content: Control, region: Rect2) -> void:
 	graph = content
-	bounds = region.grow(maxf(size.x, size.y) / (2 * zoom))
+	if list_mode: zoom = 1.0
+	bounds = region if list_mode else region.grow(maxf(size.x, size.y) / (2 * zoom))
 	if canvas == null:
 		canvas = Control.new()
 		canvas.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -73,8 +76,14 @@ func center_on_tech(point: Vector2) -> void:
 	scroll_horizontal = roundi(offset.x)
 	scroll_vertical = roundi(offset.y)
 	layout_graph()
+func show_list_section(section_y: float) -> void:
+	await get_tree().process_frame
+	if not is_inside_tree() or not list_mode: return
+	layout_graph()
+	scroll_horizontal = 0
+	scroll_vertical = maxi(0, roundi(section_y - 112))
 func zoom_at(factor: float, point: Vector2) -> void:
-	if graph == null: return
+	if graph == null or list_mode: return
 	var before := (point + Vector2(scroll_horizontal, scroll_vertical) - graph.position) / zoom
 	zoom = clampf(zoom * factor, 0.35, 1.5)
 	layout_graph()
@@ -88,7 +97,8 @@ func _gui_input(event: InputEvent) -> void:
 			panning = event.pressed
 			accept_event()
 		elif event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-			zoom_at(1.12 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.12, event.position)
+			if list_mode: scroll_vertical += -80 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 80
+			else: zoom_at(1.12 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.12, event.position)
 			accept_event()
 	elif event is InputEventMouseMotion and panning:
 		scroll_horizontal -= roundi(event.relative.x)

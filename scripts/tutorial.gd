@@ -51,6 +51,11 @@ var drag_label: Label
 var introduced_shortcuts: Dictionary = {"LMB": true}
 var loss_save_glow := false
 var turret_loss_glow := false
+var pink_lesson_source := Vector2i(-1000, -1000)
+var pink_lesson_target := Vector2i(-1000, -1000)
+var pink_lesson_kind := ""
+var pink_guide_path: Array[Vector2i] = []
+var pink_guide_signature := -1
 func _ready() -> void:
 	z_index = 210
 	material = game.material
@@ -109,6 +114,7 @@ func extractor_field(cell: Vector2i) -> bool:
 func turret_target() -> Vector2i:
 	return game.current_core + Vector2i(8, 0) if designated_turret == game.INVALID else designated_turret
 func on_building_placed(kind: String, cell: Vector2i) -> void:
+	preload("res://scripts/pink_tutorial.gd").on_placed(self, kind, cell)
 	if game.tutorial_enabled and not skipped and kind == "turret" and ammo_tutorial_stage < 3 and (ammo_tutorial_target == game.INVALID or not game.buildings.has(ammo_tutorial_target)):
 		ammo_tutorial_target = cell
 		ammo_tutorial_stage = maxi(1, ammo_tutorial_stage)
@@ -237,10 +243,11 @@ func shortcut_lines() -> Array[String]:
 	if introduced_shortcuts.has("RMB"): lines.append("Right click — Deselect")
 	if introduced_shortcuts.has("X"): lines.append("X — Demolish")
 	if introduced_shortcuts.has("Z"): lines.append("Z — Clear conveyor")
-	if introduced_shortcuts.has("Q"): lines.append("Q — Start wave early")
+	if introduced_shortcuts.has("Q"): lines.append("Q — Skip")
 	if introduced_shortcuts.has("Space"): lines.append("Space — Pause / Resume")
 	if introduced_shortcuts.has("E") and game.researched.has("time_speed"): lines.append("E — Speed")
 	if introduced_shortcuts.has("Alt"): lines.append("Alt - Mouseover for info")
+	if ui_revealed.get("pink_produced", false): lines.append("WASD - move camera")
 	return lines
 
 func scraps_should_glow() -> bool:
@@ -258,6 +265,9 @@ func connection_cost_remaining() -> int:
 	return needed
 
 func central_message() -> String:
+	if game.core_under_attack and not game.lost: return "Enemies have breached your defences.\nLoad a save form the timeline."
+	if pink_lesson_kind != "" and not ui_revealed.get(pink_lesson_kind + "_done", false):
+		return "Towers can pink stuff to double attack speed.\nConnect the refinery to a tower."
 	var frontier_message := next_core_message()
 	if frontier_message != "": return frontier_message
 	if ammo_tutorial_stage in [1, 2] and game.buildings.has(ammo_tutorial_target): return "Some turrets require ammo.\nHold Alt over a turret to see its ammo type\nBuild conveyor from extractor to turret."
@@ -273,7 +283,6 @@ func central_message() -> String:
 	if stage == Stage.BELTS and extractor_connected_once and has_extractor_connection() and not ui_revealed.get("solar_unlocked", false): return "Mine some more ore."
 	if game.researched.has("time_speed") and game.wave >= 5 and not game.paused and not speed_toggled: return "Press E to speed up time."
 	if not pause_exit_completed and paused_once and first_wave_completed:
-		if collected_tutorial_scrap < game.Content.BARRIER_UNLOCK_SCRAP and not game.scraps.is_empty(): return "Mouse over the scraps to collect."
 		if barrier_tree_closed and info_hover_time < 2.0 and inspected_things.size() < 3:
 			return "Hold alt while mousing over something for info."
 	if waiting_for_copper(): return "Wait for enough copper extraction."
@@ -369,6 +378,7 @@ func supply_connected(drill: Vector2i, target: Vector2i, require_conveyor: bool 
 	return false
 
 func on_new_core(cell: Vector2i) -> void:
+	ui_revealed.max_core_count = maxi(int(ui_revealed.get("max_core_count", 1)), game.cores.size())
 	if not game.tutorial_enabled or skipped or game.cores.size() != 2 or next_core_stage >= 3: return
 	next_core_target = cell
 	next_core_stage = maxi(1, next_core_stage)
@@ -414,6 +424,7 @@ func has_extractor_connection() -> bool:
 				cursor = game.output_target(anchor, b)
 	return false
 func on_wave_started() -> void:
+	preload("res://scripts/pink_tutorial.gd").finish(self)
 	waves_started = true
 	onboarding_completed = true
 func on_wave_completed(number: int) -> void:
@@ -423,12 +434,12 @@ func on_wave_completed(number: int) -> void:
 func on_tech_opened() -> void:
 	tech_opened = true
 func storage_hint_active() -> bool:
-	if game.wave >= 4 and game.inventory.copper >= game.material_capacity("copper") and not game.researched.has("copper_storage"):
-		ui_revealed.copper_storage_hint = true
-	return ui_revealed.get("copper_storage_hint", false) and not game.researched.has("copper_storage")
+	return false
 func storage_hint_tech() -> String:
-	if not storage_hint_active(): return ""
-	return "turret_range" if not game.researched.has("turret_range") else "copper_storage"
+	if game.researched.has("barriers"):
+		if not game.researched.has("solar_speed"): return "solar_speed"
+		if not game.researched.has("turret_range"): return "turret_range"
+	return ""
 func slugger_rewind_hint_active() -> bool:
 	return ui_revealed.get("slugger_rewind_hint", false) and game.cores.size() == 2 and not game.researched.has("weapons") and game.researched.has(game.TECH.weapons.parent) and game.affordable(game.TECH.weapons.cost)
 func menu_should_glow() -> bool:
@@ -436,9 +447,15 @@ func menu_should_glow() -> bool:
 	if stage == Stage.BELTS and game.inventory.copper < connection_cost_remaining(): return false
 	return game.tutorial_enabled and stage in [Stage.EXTRACTOR, Stage.BELTS, Stage.SOLAR] and not menu_clicked
 func building_should_glow(kind: String) -> bool:
+	if second_turret_hint_active() and kind == "solar": return true
 	if kind == "belt" and extractor_connected_once and has_extractor_connection(): return false
 	if kind == "belt" and game.inventory.copper < connection_cost_remaining(): return false
 	return game.tutorial_enabled and expected_building() == kind and not building_clicked
+func second_turret_hint_active() -> bool:
+	if not game.tutorial_enabled or skipped: return false
+	if game.cores.size() == 1 and game.wave == 2 and game.paused:
+		ui_revealed.second_turret_hint = true
+	return ui_revealed.get("second_turret_hint", false) and turrets_ever_built < 2
 func skip_to_ready() -> void:
 	skipped = true
 	next_core_stage = 3
@@ -520,6 +537,7 @@ func _process(dt: float) -> void:
 	if ammo_guide_clock >= 0.4:
 		ammo_guide_clock = 0.0
 		refresh_ammo_guide()
+		preload("res://scripts/pink_tutorial.gd").update(self)
 	poll_clock += dt
 	if poll_clock >= 0.12:
 		poll_clock = 0

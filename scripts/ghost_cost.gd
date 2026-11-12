@@ -1,4 +1,4 @@
-﻿extends Control
+extends Control
 var game: Node2D
 var hud: CanvasLayer
 var cost: Dictionary = {}
@@ -10,7 +10,7 @@ func update_preview(pointer_override: Vector2 = Vector2.INF) -> void:
 	visible = game.active_tool == "build" and game.selected != "" and game.is_cell_visible(game.hover_cell) and not hud.is_pointer_over_ui(pointer_override)
 	if not visible: return
 	var existing: Dictionary = game.building_at(game.hover_cell)
-	if not existing.is_empty() and not ((game.is_turret(game.selected) and existing.kind == "wall") or (game.selected == "splitter" and existing.kind == "belt")):
+	if not existing.is_empty() and not ((game.is_turret(game.selected) and existing.kind in ["wall", "wall_iron"]) or (game.selected == "splitter" and existing.kind == "belt")):
 		visible = false
 		return
 	cost = game.building_cost(game.selected, -1, game.hover_cell)

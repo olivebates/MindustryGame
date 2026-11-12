@@ -14,6 +14,7 @@ func run() -> void:
 	game._add_building(drill, "drill", 0)
 	game._add_building(belt, "belt", 0)
 	game._add_building(Vector2i(26, 27), "copper_store", 0)
+	game.buildings[Vector2i(26, 27)].buffer.pink = 1
 	check(game.buildings[drill].pending and not game.buildings[belt].pending, "Extractors are ghosts but conveyors remain active")
 	game.advance_logistics(10)
 	check(game.buildings[drill].progress == 0 and game.can_receive(belt, "copper"), "Ghost extractor stays idle while active conveyor accepts materials")

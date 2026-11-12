@@ -1,1 +1,19 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><ellipse cx="32" cy="37" rx="28" ry="22" fill="#11171b" fill-opacity=".5"/><path d="M8 5H49V15H8ZM8 49H49V59H8Z" fill="#4e5659" stroke="#252c31" stroke-width="2"/><path d="M14 5V15M25 5V15M37 5V15M14 49V59M25 49V59M37 49V59" stroke="#909898" stroke-width="2"/><g fill="#afb6b5" stroke="#363f42" stroke-width="2"><path d="M9 32L27 10L54 24L61 32L54 40L27 54Z"/></g><circle cx="29" cy="32" r="5" fill="#e7ebe5" stroke="#737f80" stroke-width="2"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<path d="M13 18Q8 14 10 10Q17 7 23 14L27 20M13 46Q8 50 10 54Q17 57 23 50L27 44" fill="#ad8d61" stroke="#24343c" stroke-width="2"/>
+<path d="M30 19L36 15Q43 15 42 20L37 25M30 45L36 49Q43 49 42 44L37 39" fill="#c4ad8d" stroke="#24343c" stroke-width="2"/>
+<path d="M9 25L5 24L3 28L5 31L3 35L6 39L10 38L13 32Z" fill="#f2f5e9" stroke="#34444a" stroke-width="2"/>
+<path d="M10 23Q14 12 26 14Q38 15 40 28L40 36Q38 49 26 50Q14 52 10 41Q6 33 10 23Z" fill="#cbb69a" stroke="#24343c" stroke-width="2"/>
+<path d="M12 24Q17 14 27 17Q33 18 35 24Q25 20 17 27L14 36L10 33Z" fill="#edf2e8"/>
+<path d="M11 37Q20 46 29 42L37 35Q36 46 27 48Q17 49 12 42Z" fill="#b2946a"/>
+<path d="M15 23L18 20M20 19L24 18M15 41L18 44" stroke="#d6cfc6" stroke-width="2" stroke-linecap="round"/>
+<path d="M34 26Q29 22 24 13Q19 5 23 3Q30 1 35 11L41 24Z" fill="#d2cac0" stroke="#24343c" stroke-width="2"/>
+<path d="M34 38Q29 42 24 51Q19 59 23 61Q30 63 35 53L41 40Z" fill="#d2cac0" stroke="#24343c" stroke-width="2"/>
+<path d="M25 7Q30 10 35 22L32 21Q26 15 25 7M25 57Q30 54 35 42L32 43Q26 49 25 57" fill="#ac8c5e"/>
+<path d="M31 25Q35 20 43 22Q50 23 53 29L58 32L53 35Q50 41 43 42Q35 44 31 39L33 35L30 32L33 29Z" fill="#d1bfa6" stroke="#24343c" stroke-width="2"/>
+<path d="M34 26Q41 20 47 26L45 30L37 29Z" fill="#f2f5e9"/>
+<path d="M34 38Q41 44 47 38L45 34L37 35Z" fill="#ba9f7a"/>
+<path d="M48 29Q55 26 57 32Q55 38 48 35L46 32Z" fill="#e5ece2"/>
+<path d="M55 30L59 32L55 34Z" fill="#34444a"/>
+<ellipse cx="45" cy="26" rx="3" ry="2.8" fill="#24343c"/><ellipse cx="45" cy="38" rx="3" ry="2.8" fill="#24343c"/>
+<path d="M44 24H46V26H44ZM44 36H46V38H44Z" fill="#ffffff"/>
+</svg>

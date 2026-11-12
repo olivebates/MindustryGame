@@ -1,1 +1,6 @@
-﻿<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'><circle cx='32' cy='32' r='9' fill='#69777d' stroke='#bbc7c5' stroke-width='2'/><path d='M32 29H59V35H32Z' fill='#384147' stroke='#182a31' stroke-width='2'/><circle cx='29' cy='32' r='4' fill='#e3eee4'/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><path d="M33 25L31 14L37 12L42 24M33 39L31 50L37 52L42 40" fill="#b87d48" stroke="#382d25" stroke-width="2"/>
+<path d="M34 25Q43 20 49 27L57 31L57 34L49 37Q42 45 34 39Z" fill="#c99558" stroke="#382d25" stroke-width="2"/>
+<path d="M45 29L55 31L55 34L45 36L42 32Z" fill="#e1bd84"/>
+<path d="M55 30L59 32L55 35Z" fill="#382d25"/>
+<ellipse cx="45" cy="26" rx="3" ry="2.5" fill="#272b25"/><ellipse cx="45" cy="38" rx="3" ry="2.5" fill="#272b25"/>
+<path d="M44 24H46V26H44ZM44 36H46V38H44Z" fill="#fff0ce"/></svg>

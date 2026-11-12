@@ -1,1 +1,11 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect x="3" y="4" width="58" height="58" rx="7" fill="#0a1015" opacity=".65"/><rect x="3" y="3" width="58" height="15" rx="4" fill="#343a40" stroke="#19252b" stroke-width="2"/><rect x="3" y="46" width="58" height="15" rx="4" fill="#343a40" stroke="#19252b" stroke-width="2"/><path d="M9 4v12m9-12v12m9-12v12m10-12v12m9-12v12m9-12v12M9 48v12m9-12v12m9-12v12m10-12v12m9-12v12m9-12v12" stroke="#b8b3a1" stroke-width="3"/><path d="m4 23 9-12h38l10 12v18L51 53H13L4 41Z" fill="#8b979b" stroke="#263238" stroke-width="2"/><path d="M13 17h15v7H8m43-7H36v7h20M8 40h20v7H13m43-7H36v7h15" fill="#c5d0ca" stroke="#4e6467" stroke-width="1.5"/><path d="m18 22 12-7 16 7 7 10-7 11-16 6-12-6-7-11Z" fill="#596d75" stroke="#c1cdc8" stroke-width="2"/><path d="m7 28 6 4-6 4m50-8-6 4 6 4" fill="none" stroke="#f1d3a3" stroke-width="2"/><circle cx="32" cy="32" r="11" fill="#263e49" stroke="#93aab0" stroke-width="2"/><circle cx="12" cy="22" r="2" fill="#f2e1b8"/><circle cx="12" cy="42" r="2" fill="#f2e1b8"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<path d="M10 22L11 12L20 10L25 17L21 24M10 42L11 52L20 54L25 47L21 40M32 19L35 9L44 11L46 22M32 45L35 55L44 53L46 42" fill="#7c4933" stroke="#213741" stroke-width="2"/>
+<path d="M12 13L20 12M12 51L20 52M37 11L44 13M37 53L44 51" stroke="#ae6647" stroke-width="3"/>
+<path d="M9 30L3 27L2 31L7 34L2 38L5 41L11 35Z" fill="#834d36" stroke="#213741" stroke-width="2"/>
+<path d="M7 24Q12 14 24 15L33 18L42 26L43 39L33 48L22 50Q10 49 7 40Z" fill="#92563c" stroke="#213741" stroke-width="2"/>
+<path d="M11 24Q17 17 25 19L33 25L27 29L16 27L10 32Z" fill="#b26848"/>
+<path d="M26 13L31 8L35 11L40 8L44 12L49 11L52 17L54 24L52 32L54 40L51 48L46 53L41 52L37 56L32 53L27 55L23 48L25 43L22 38L24 31L22 25L25 21Z" fill="#683d2a" stroke="#213741" stroke-width="2"/>
+<path d="M28 18L32 13L35 16L40 13L44 17L48 16L49 23L44 22L42 26L36 22L32 26L26 23Z" fill="#9b5b3f"/>
+<path d="M26 35L30 38L28 44L33 42L35 48L39 45L44 49L48 44L48 50L42 52L37 54L32 51L28 52L25 46Z" fill="#4b2c1f"/>
+<path d="M28 27L31 30L29 33M36 28L39 31L37 34M45 30L48 33L46 37" fill="none" stroke="#854e36" stroke-width="2" stroke-linecap="round"/>
+</svg>

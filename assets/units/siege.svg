@@ -1,36 +1,22 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-<path d="M5 4H49L56 11V53L49 60H5L1 56V8Z" fill="#111c23"/>
-<path d="M6 3H48L53 8V18H3V7ZM3 46H53V56L48 61H6L3 57Z" fill="#34414a"/>
-<path d="M7 5H12V16H7ZM15 5H20V16H15ZM23 5H28V16H23ZM31 5H36V16H31ZM39 5H44V16H39ZM47 8H51V16H47ZM7 48H12V59H7ZM15 48H20V59H15ZM23 48H28V59H23ZM31 48H36V59H31ZM39 48H44V59H39ZM47 48H51V56H47Z" fill="#839399"/>
-<path d="M7 5H44V7H7ZM7 48H44V50H7Z" fill="#bdc9c6"/>
-<path d="M9 13H44L54 23V41L44 51H9L4 46V18Z" fill="#23343f"/>
-<path d="M10 15H43L51 24V40L43 48H10L7 44V20Z" fill="#83969b"/>
-<path d="M11 16H42L47 21H11Z" fill="#d3ddd3"/>
-<path d="M10 23H19V41H10Z" fill="#3e545e"/>
-<path d="M11 25H17V27H11ZM11 30H17V32H11ZM11 35H17V37H11Z" fill="#152a35"/>
-<path d="M20 18H40L48 26V38L40 46H20L14 38V26Z" fill="#344d59"/>
-<path d="M22 20H39L45 27V37L39 43H22L17 37V27Z" fill="#b2c4c2"/>
-<path d="M23 23H37L41 28V36L37 40H23L20 36V28Z" fill="#243d4b"/>
-<path d="M30 23L39 32L30 41L21 32Z" fill="#5f7f8b"/>
-<path d="M11 19H15V22H11ZM11 42H15V45H11ZM43 24H47V27H43ZM43 37H47V40H43Z" fill="#efdbc1"/>
-<path d="M7 27H10V37H7Z" fill="#b8c7c5"/>
-<path d="M46 29H52V35H46Z" fill="#172d39"/>
-<path d="M21 47H38V49H21Z" fill="#172b36"/>
-<path d="M23 18H37L45 25V39L37 46H23L16 39V25Z" fill="#142a36"/>
-<path d="M24 20H36L42 26V38L36 43H24L19 38V26Z" fill="#91a9ae"/>
-<path d="M25 21H35L39 25H23Z" fill="#d9e4d9"/>
-<path d="M25 26H39V38H25Z" fill="#3f5d6c"/>
-<path d="M30 24H55V40H30Z" fill="#172c39"/>
-<path d="M32 26H56V38H32Z" fill="#7f9ba4"/>
-<path d="M32 26H55V29H32Z" fill="#d1ddd6"/>
-<path d="M35 30H53V35H35Z" fill="#4e6d7b"/>
-<path d="M39 27H42V37H39ZM47 27H50V37H47Z" fill="#2b4655"/>
-<path d="M53 22H62V42H53Z" fill="#182d3b"/>
-<path d="M55 24H62V40H55Z" fill="#9eb2b3"/>
-<path d="M55 24H62V27H55Z" fill="#e5ebdb"/>
-<path d="M58 28H63V36H58Z" fill="#0c202d"/>
-<path d="M54 28H56V31H54ZM54 33H56V36H54Z" fill="#314d5b"/>
-<path d="M22 28H27V36H22Z" fill="#d0ded5"/>
-<path d="M23 29H26V35H23Z" fill="#637f8a"/></svg>
-
-
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<path d="M10 19L11 10Q16 7 22 12L24 20M10 45L11 54Q16 57 22 52L24 44M33 16L37 8L45 10L47 20M33 48L37 56L45 54L47 44" fill="#657e98" stroke="#233c49" stroke-width="2"/>
+<path d="M12 12L19 12M12 52L19 52M38 11L44 13M38 53L44 51" stroke="#aebbc9" stroke-width="3"/>
+<path d="M8 30L3 24L2 26L4 33L10 36" fill="#879baf" stroke="#233c49" stroke-width="2"/>
+<path d="M6 23Q10 10 25 10Q41 10 47 24L49 36Q43 52 28 54Q11 55 6 42Q2 32 6 23Z" fill="#889cb0" stroke="#233c49" stroke-width="2"/>
+<path d="M9 23Q13 13 25 13Q34 13 40 21L35 24L24 20L14 26L9 33Z" fill="#b0becb"/>
+<path d="M8 38Q18 48 31 43L43 33L46 37Q42 50 28 52Q14 53 8 44Z" fill="#5e768d"/>
+<path d="M12 30L15 26M14 39L17 43M22 17L27 16M22 48L28 48" fill="none" stroke="#7088a0" stroke-width="2" stroke-linecap="round"/>
+<path d="M40 27Q28 28 25 20L23 11Q24 3 31 4L39 7L45 16L44 25M40 37Q28 36 25 44L23 53Q24 61 31 60L39 57L45 48L44 39" fill="#8b9eb1" stroke="#233c49" stroke-width="2"/>
+<path d="M28 9Q32 5 37 12L41 21L35 23L29 18Z" fill="#b6c2ce"/>
+<path d="M28 55Q32 59 37 52L41 43L35 41L29 46Z" fill="#69829b"/>
+<path d="M28 12L31 19L37 23M28 52L31 45L37 41" fill="none" stroke="#657f98" stroke-width="2"/>
+<path d="M39 24Q34 17 40 13Q48 12 52 23L53 30L52 41Q48 52 40 51Q34 47 39 40Z" fill="#8a9db1" stroke="#233c49" stroke-width="2"/>
+<path d="M40 19Q45 14 48 22L48 28L42 29Z" fill="#b7c3cf"/>
+<path d="M39 42L45 39L50 41Q47 50 41 48Z" fill="#617a92"/>
+<path d="M48 23Q56 18 59 20Q61 25 54 28L50 28M48 41Q56 46 59 44Q61 39 54 36L50 36" fill="#f7f1dc" stroke="#465769" stroke-width="1.5"/>
+<path d="M47 27Q53 25 57 29Q61 34 58 40L55 45L50 45L48 42L52 38L53 33L48 35Z" fill="#9aabbb" stroke="#2b4857" stroke-width="2"/>
+<path d="M50 28Q56 27 57 32L55 36L53 35L54 31Z" fill="#b5c2ce"/>
+<path d="M51 38L55 40M50 41L53 43" stroke="#667f98" stroke-width="2"/>
+<ellipse cx="47" cy="23" rx="2.5" ry="2" fill="#203b49"/><ellipse cx="47" cy="41" rx="2.5" ry="2" fill="#203b49"/>
+<path d="M46 22H48M46 40H48" stroke="#ffffff" stroke-width="1.5"/>
+</svg>

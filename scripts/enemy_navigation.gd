@@ -1,4 +1,4 @@
-﻿extends RefCounted
+extends RefCounted
 const TURRET_PRIORITY_TILES := 15
 var grid := AStarGrid2D.new()
 var runner_grid := AStarGrid2D.new()
@@ -51,14 +51,18 @@ func refresh_grid(game: Node2D) -> void:
 		grid.region = Rect2i(0, 0, game.WIDTH, game.HEIGHT)
 		grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 		grid.update()
-		for cell in game.rocks: grid.set_point_solid(cell)
-		for cell in solids: grid.set_point_solid(cell)
+		for cell in game.rocks:
+			if game.in_bounds(cell): grid.set_point_solid(cell)
+		for cell in solids:
+			if game.in_bounds(cell): grid.set_point_solid(cell)
 		runner_grid.clear()
 		runner_grid.region = grid.region
 		runner_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 		runner_grid.update()
-		for cell in game.rocks: runner_grid.set_point_solid(cell)
-		for cell in solids: runner_grid.set_point_solid(cell)
+		for cell in game.rocks:
+			if game.in_bounds(cell): runner_grid.set_point_solid(cell)
+		for cell in solids:
+			if game.in_bounds(cell): runner_grid.set_point_solid(cell)
 		var danger_cost: float = game.WIDTH * game.HEIGHT + 1
 		for turret in turrets:
 			var radius := ceili(float(turret[1]) / game.TILE)
@@ -93,7 +97,7 @@ func find_route(game: Node2D, position: Vector2, ignore_turrets: bool = false, a
 	for cell in game.buildings:
 		if game.buildings[cell].get("pending", false): continue
 		var kind: String = game.buildings[cell].kind
-		if kind == "wall":
+		if kind in ["wall", "wall_iron"]:
 			walls.append(cell)
 			continue
 		if kind == "belt" or (kind == "core" and cell != game.current_core): continue
@@ -113,9 +117,9 @@ func find_route(game: Node2D, position: Vector2, ignore_turrets: bool = false, a
 	var origin_solid := navigation_grid.is_point_solid(origin)
 	navigation_grid.set_point_solid(origin, false)
 	for target in candidates:
-		if game.buildings[target].kind == "wall" and not best.is_empty() and game.buildings[best.target].kind != "wall": break
+		if game.buildings[target].kind in ["wall", "wall_iron"] and not best.is_empty() and game.buildings[best.target].kind not in ["wall", "wall_iron"]: break
 		var candidate := firing_route(game, navigation_grid, origin, position, target, attack_range, actor)
-		if candidate.is_empty() and game.buildings[target].kind == "wall":
+		if candidate.is_empty() and game.buildings[target].kind in ["wall", "wall_iron"]:
 			candidate = firing_route(game, navigation_grid, origin, position, target, attack_range)
 			if not candidate.is_empty(): candidate.shared_barrier = true
 		if candidate.is_empty(): continue

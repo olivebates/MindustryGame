@@ -21,7 +21,7 @@ func capture_rewind_frame() -> Dictionary:
 	var traces: Array = []
 	var transform: Transform2D = game.get_canvas_transform()
 	for enemy in game.enemies:
-		ghosts.append({"pos": transform * enemy.pos, "velocity": enemy.get("velocity", Vector2.ZERO) * game.camera.zoom, "angle": enemy.angle, "scale": game.camera.zoom.x, "texture": game.textures[enemy.kind], "size": game.Content.ENEMY_TYPES[enemy.kind].size, "color": game.TEAM_COLORS[enemy.color]})
+		ghosts.append({"pos": transform * enemy.pos, "velocity": enemy.get("velocity", Vector2.ZERO) * game.camera.zoom, "angle": enemy.angle, "scale": game.camera.zoom.x, "texture": game.textures[enemy.kind + "_" + enemy.color], "size": game.Content.ENEMY_TYPES[enemy.kind].size, "color": Color.WHITE})
 	for shot in game.shots: traces.append({"from": transform * shot.from, "to": transform * shot.to, "color": shot.color})
 	return {"frame": frame, "ghosts": ghosts, "traces": traces}
 
@@ -59,6 +59,10 @@ var tech_button: Button
 var tutorial_prompt: Label
 var tech_graph: Control
 var tech_scroll: ScrollContainer
+var tech_list_mode := false
+var tech_view_opened := false
+var tech_mode_button: Button
+var tech_list_available_y := 0.0
 var wave_label: Label
 var notice_label: Label
 var wave_announcement: Label
@@ -83,6 +87,7 @@ var minimap: Control
 var tooltip: Panel
 var tooltip_title: Label
 var tooltip_body: RichTextLabel
+var boost_comparison: Control
 var ui_regions: Array[Control] = []
 var research_signature := -1
 var price_signature := -1
@@ -201,6 +206,7 @@ func _ready() -> void:
 	tooltip_body.position = Vector2(8, 40)
 	tooltip_body.size = Vector2(314, 72)
 	tooltip_body.bbcode_enabled = true
+	tooltip_body.install_effect(preload("res://scripts/base_stat_fade.gd").new())
 	tooltip_body.scroll_active = false
 	tooltip_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tooltip_body.add_theme_font_size_override("normal_font_size", 13)
@@ -261,7 +267,7 @@ func label(parent: Control, text: String, pos: Vector2, dimensions: Vector2, fon
 	var result := Label.new()
 	result.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	result.clip_text = true
-	result.text = text
+	result.text = preload("res://scripts/display_text.gd").format(text)
 	result.position = pos
 	result.add_theme_font_size_override("font_size", font_size)
 	result.add_theme_color_override("font_color", color)
@@ -274,7 +280,7 @@ func button(parent: Control, text: String, pos: Vector2, dimensions: Vector2, ca
 	result.set_script(preload("res://scripts/pixel_button.gd"))
 	result.material = game.material
 	result.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	result.text = text
+	result.text = preload("res://scripts/display_text.gd").format(text)
 	result.position = pos
 	result.size = dimensions
 	result.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -483,7 +489,7 @@ func _rebuild_cards() -> void:
 		var card := button(expanded, "", Vector2((index % columns) * 188, 24 + (index / columns) * 80), Vector2(188, 80), func():
 			game.select_building(kind)
 		)
-		icon(card, game.ui_textures.wall_iron if kind == "wall" and game.researched.has("iron_barriers") else game.ui_textures[kind], Vector2(8, 8), Vector2(32, 32))
+		icon(card, game.ui_textures[kind], Vector2(8, 8), Vector2(32, 32))
 		label(card, data.name, Vector2(46, 8), Vector2(134, 32), 13)
 		var amounts := cost_row(card, game.building_cost(kind), Vector2(8, 48))
 		if index < 9 and build_hotkeys_available(): set_hotkey_label(card, str(index + 1), true)
@@ -548,11 +554,11 @@ func _build_wave_controls() -> void:
 	set_button_icon(saves_button, "saves")
 	set_info(saves_button, "Browse saves", "Browse saved waves grouped by core.", "")
 	next_button = button(wave_controls, "Start", Vector2(144, 0), Vector2(178, 72), game.request_next_wave)
-	set_info(next_button, "Next wave", "Start the next enemy wave early.", "Q")
+	set_info(next_button, "Skip", "Skip ahead to full resource storage or the next wave.", "Q")
 	next_button.add_theme_font_size_override("font_size", 24)
 	speed_button = button(wave_controls, "", Vector2(322, 0), Vector2(72, 72), game.cycle_speed)
 	pause_button = button(wave_controls, "", Vector2(394, 0), Vector2(72, 72), game.toggle_pause)
-	set_info(speed_button, "Speed", "Switch between normal and triple simulation speed.", "E")
+	set_info(speed_button, "Speed", "Switch between x1 and x5 simulation speed.", "E")
 	set_info(pause_button, "Pause / Resume", "Freeze the battle while you build or demolish.", "Space")
 func is_pointer_over_ui(pointer_override: Vector2 = Vector2.INF) -> bool:
 	if is_instance_valid(modal) and modal.visible: return true
@@ -569,14 +575,14 @@ func refresh() -> void:
 	_refresh_resources()
 	var active: bool = game.spawn_remaining > 0 or game.wave_warp_active or game.last_round_active()
 	next_button.disabled = active or game.lost or game.active_spawners.is_empty()
-	next_button.text = "In Progress..." if active else ("Start Early" if game.tutorial.waves_started else "Start")
+	next_button.text = "In Progress..." if active else ("Skip" if preload("res://scripts/skip_events.gd").next_is_capacity(game) else ("Start Early" if game.tutorial.waves_started else "Start"))
 	next_button.add_theme_font_size_override("font_size", 18 if active or game.tutorial.waves_started else 24)
 	next_button.set_meta("tutorial_glow", game.tutorial.stage >= game.tutorial.Stage.READY and not game.tutorial.waves_started and not game.tutorial.ui_revealed.get("start_called", false))
 	set_button_icon(speed_button, "speed3")
-	speed_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.speed == 3 else Color.TRANSPARENT))
+	speed_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.speed > 1 else Color.TRANSPARENT))
 	pause_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.paused else Color.TRANSPARENT))
 	set_button_icon(pause_button, "play" if game.paused else "pause")
-	speed_button.set_meta("info", ["Speed: x%d" % game.speed, "Switch between normal and triple simulation speed.", "E"])
+	speed_button.set_meta("info", ["Speed: x%d" % game.speed, "Switch between x1 and x5 simulation speed.", "E"])
 	back_button.disabled = game.saves.current < 0
 	demolish_button.disabled = game.lost
 	demolish_button.add_theme_stylebox_override("normal", style(Color("56311f") if game.active_tool == "abolish" else Color.TRANSPARENT))
@@ -584,9 +590,9 @@ func refresh() -> void:
 	save_browser.refresh_timeline()
 	var remaining := ceili(maxf(0, game.wave_timer))
 	wave_label.text = "00:00" if game.last_round_active() else "%02d:%02d" % [remaining / 60, remaining % 60]
-	next_wave_label.text = "Next Wave: Last" if game.last_round_active() else "Next Wave: %s" % preload("res://scripts/display_numbers.gd").format(game.wave + 1)
-	notice_label.text = game.notice if game.notice_time > 0 else ""
-	tool_hint.text = game.tutorial.bottom_message()
+	next_wave_label.text = "Last Wave" if game.last_round_active() else ("Next wave: Last Wave" if game.next_wave_is_last() else "Next wave: %s" % preload("res://scripts/display_numbers.gd").format(game.wave + 1))
+	notice_label.text = preload("res://scripts/display_text.gd").format(game.notice) if game.notice_time > 0 else ""
+	tool_hint.text = preload("res://scripts/display_text.gd").format(game.tutorial.bottom_message())
 	tool_hint.add_theme_font_size_override("font_size", 21)
 	tool_hint.offset_top = expanded.offset_top - 28 if expanded.visible else -100
 	tool_hint.offset_bottom = tool_hint.offset_top + 24
@@ -645,7 +651,8 @@ func _process(dt: float) -> void:
 	_refresh_tooltip()
 	game.tutorial.update_info_hover(dt, tooltip.visible, tooltip_identity)
 	_refresh_shortcuts()
-	tool_hint.text = game.tutorial.bottom_message()
+	_refresh_research()
+	tool_hint.text = preload("res://scripts/display_text.gd").format(game.tutorial.bottom_message())
 	screen_edges.visible = game.paused or game.active_tool == "abolish"
 	screen_edges.material.set_shader_parameter("viewport_size", get_viewport().get_visible_rect().size)
 	screen_edges.material.set_shader_parameter("paused", game.paused)
@@ -678,7 +685,8 @@ func _process(dt: float) -> void:
 			pulse_resource(resource)
 			var position: Vector2 = resource_views[resource].position + Vector2(0, 47)
 			floating_caption("+%s" % preload("res://scripts/display_numbers.gd").format(gained), root.get_global_transform() * position, resource_color(resource), 0.7, Vector2(0, -22), 12)
-	for resource in resource_views:
+	var inventory_order: Array = resource_views.keys()
+	for resource in inventory_order:
 		var view: Dictionary = resource_views[resource]
 		var ratio: float = float(game.inventory[resource]) / maxf(1, game.material_capacity(resource))
 		view.fill.color = resource_color(resource).lightened(0.15 + sin(Time.get_ticks_msec() * 0.004) * 0.10) if ratio >= 0.9 else resource_color(resource).darkened(0.25)
@@ -690,6 +698,12 @@ func pulse_resource(resource: String) -> void:
 	pulse.tween_property(sprite, "scale", Vector2.ONE * 1.13, 0.06).set_ease(Tween.EASE_OUT)
 	pulse.tween_property(sprite, "scale", Vector2.ONE, 0.18).set_ease(Tween.EASE_OUT)
 	sprite.set_meta("pulse_tween", pulse)
+func show_capacity_reached(resource: String) -> void:
+	if not resource_views.has(resource): return
+	var row: Control = resource_views[resource].row
+	row.show()
+	var origin := root.get_global_transform() * (row.position + inventory_panel.position + Vector2(8, 30))
+	floating_caption("Max capacity...", origin, ERROR_COLOR, 2.2, Vector2(0, -36), 13)
 func floating_caption(text: String, origin: Vector2, color: Color, duration: float = 0.9, drift: Vector2 = Vector2(0, -40), font_size: int = 17) -> Label:
 	origin = ui_point(origin)
 	if color == ERROR_COLOR:
@@ -713,7 +727,7 @@ func floating_caption(text: String, origin: Vector2, color: Color, duration: flo
 	return caption
 func announce_wave(number: int) -> void:
 	if wave_announcement_tween != null and wave_announcement_tween.is_valid(): wave_announcement_tween.kill()
-	wave_announcement.text = "Wave %s" % preload("res://scripts/display_numbers.gd").format(number)
+	wave_announcement.text = "Last Wave" if game.last_round_active() else "Wave %s" % preload("res://scripts/display_numbers.gd").format(number)
 	wave_announcement.modulate.a = 1.0
 	wave_announcement_tween = wave_announcement.create_tween()
 	wave_announcement_tween.tween_interval(1.8)
@@ -757,13 +771,19 @@ func _refresh_tooltip(pointer_override: Vector2 = Vector2.INF) -> void:
 		if gate.converted or world_point.distance_to(gate.position) > game.TILE: continue
 		var index: int = game.spawners.find(gate)
 		var forecast: Dictionary = game.next_wave_forecast([] if gate.active else [index])
+		var preview_wave: int = game.wave + 1
+		if gate.active and game.last_round_active():
+			var indices: Array = []
+			for active_gate in game.active_spawners: indices.append(game.spawners.find(active_gate))
+			preview_wave = game.wave
+			forecast = preload("res://scripts/wave_forecast.gd").build(game, preview_wave, indices, [], game.pending_waves)
 		var info: Dictionary = forecast.by_spawn.get(index, {"budget": 0, "counts": {}})
-		show_info("Enemy spawn — Wave %s" % preload("res://scripts/display_numbers.gd").format(game.wave + 1), "", pointer)
+		show_info(game.spawn_wave_title(gate), "", pointer)
 		if not is_instance_valid(spawn_preview):
 			spawn_preview = preload("res://scripts/spawn_preview.gd").new()
 			spawn_preview.hud = self
 			info_root.add_child(spawn_preview)
-		spawn_preview.show_forecast(info.counts, pointer, game.wave + 1)
+		spawn_preview.show_forecast(info.counts, pointer, preview_wave, info.get("colored", {}), index)
 		tooltip_identity = "spawn:" + str(index)
 		return
 	for enemy in game.enemies:
@@ -778,7 +798,7 @@ func _refresh_tooltip(pointer_override: Vector2 = Vector2.INF) -> void:
 	if not building.is_empty():
 		show_structure_info(building.kind, building, pointer)
 	elif game.ores.has(game.hover_cell):
-		show_info(game.ores[game.hover_cell].capitalize() + " deposit", "Hold the mouse button to gather this ore.\nManual extraction: 1 / %s" % "second", pointer)
+		show_info(game.ores[game.hover_cell].capitalize() + " deposit", "Hold the mouse button to gather this ore.\nManual extraction: 1 every %ss" % preload("res://scripts/display_numbers.gd").format(game.manual_mining_interval(game.ores[game.hover_cell])), pointer)
 
 func show_structure_info(kind: String, building: Dictionary, pointer: Vector2) -> void:
 	if kind == "core" and not building.is_empty(): hovered_core = game.anchor_at(game.hover_cell)
@@ -789,7 +809,7 @@ func show_structure_info(kind: String, building: Dictionary, pointer: Vector2) -
 	var states := {"damaged": not building.is_empty() and building.hp < building.max_hp}
 	if not building.is_empty():
 		states.empty_ammo = game.is_turret(kind) and not game.BUILDINGS[kind].get("ammo_free", false) and building.ammo == 0
-		if building.item != "":
+		if building.item != "" and kind != "refinery":
 			var target: Vector2i = game.output_target(game.anchor_at(game.hover_cell), building)
 			states.blocked = target == game.INVALID or not game.can_receive(target, building.item, game.anchor_at(game.hover_cell))
 			if states.blocked: text += "\nStatus: Output blocked"
@@ -811,6 +831,8 @@ func show_structure_info(kind: String, building: Dictionary, pointer: Vector2) -
 		tooltip.position = (ui_point(pointer) + Vector2(18, -tooltip.size.y - 16)).clamp(Vector2(4, 4), root.size - tooltip.size - Vector2(4, 4))
 
 func show_info(title: String, body: String, pointer: Vector2, states: Dictionary = {}) -> void:
+	title = preload("res://scripts/display_text.gd").format(title)
+	if is_instance_valid(boost_comparison): boost_comparison.hide()
 	color_dots.hide()
 	tooltip_identity = "info:" + title
 	var now := Time.get_ticks_msec()
@@ -820,11 +842,13 @@ func show_info(title: String, body: String, pointer: Vector2, states: Dictionary
 		info_fade = create_tween()
 		info_fade.tween_property(tooltip, "modulate:a", 1.0, 0.10)
 	last_info_msec = now
-	tooltip_title.text = title
-	tooltip_body.text = decorated_stats(body, states)
+	tooltip_title.text = preload("res://scripts/display_text.gd").format(title)
+	tooltip_body.text = preload("res://scripts/display_text.gd").format(decorated_stats(body, states))
+	var body_width := 370.0 if body.contains("[base_stat]") else 314.0
+	tooltip_body.size.x = body_width
 	var height := maxf(18, tooltip_body.get_content_height())
-	tooltip_body.size = Vector2(314, height)
-	tooltip.size = Vector2(330, 40 + height + 8)
+	tooltip_body.size = Vector2(body_width, height)
+	tooltip.size = Vector2(body_width + 16, 40 + height + 8)
 	tooltip.position = (ui_point(pointer) + Vector2(18, -tooltip.size.y - 16)).clamp(Vector2(4, 4), root.size - tooltip.size - Vector2(4, 4))
 	tooltip.visible = true
 
@@ -888,15 +912,21 @@ func close_modal() -> void:
 	_rebuild_cards()
 func show_tech_tree() -> void:
 	if (not game.tutorial.tech_available and not game.tutorial.storage_hint_active()) or is_instance_valid(modal): return
+	if not tech_view_opened:
+		tech_list_mode = false
+		tech_view_opened = true
 	game.tutorial.on_tech_opened()
 	game.finish_drag()
 	var content := modal_panel(Vector2(960, 664))
-	label(content, "RESEARCH NETWORK", Vector2(24, 16), Vector2(600, 32), 23, ACCENT)
+	label(content, "RESEARCH NETWORK", Vector2(24, 16), Vector2(560, 32), 23, ACCENT)
+	tech_mode_button = button(content, "Tree view" if tech_list_mode else "List view", Vector2(620, 17), Vector2(156, 44), toggle_tech_view)
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]: tech_mode_button.add_theme_stylebox_override(state, style(Color.TRANSPARENT, BORDER, 3))
 	var close_button := button(content, "Close", Vector2(798, 17), Vector2(138, 44), close_modal)
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]: close_button.add_theme_stylebox_override(state, style(Color.TRANSPARENT, BORDER, 3))
 	set_info(close_button, "Close research", "Close the tech tree and restore the previous pause state.", "Esc")
 	tech_scroll = ScrollContainer.new()
 	tech_scroll.set_script(preload("res://scripts/tech_viewport.gd"))
+	tech_scroll.list_mode = tech_list_mode
 	tech_scroll.position = Vector2(0, 70)
 	tech_scroll.size = Vector2(960, 535)
 	tech_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
@@ -905,18 +935,25 @@ func show_tech_tree() -> void:
 	tech_graph = Control.new()
 	tech_graph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tech_graph.draw.connect(func():
+		if tech_list_mode: return
 		for id in tech_buttons:
 			var data: Dictionary = game.TECH[id]
 			if data.parent == "" or not tech_buttons.has(data.parent): continue
 			var start: Vector2 = game.TECH[data.parent].pos + Vector2(108, 128)
 			var end: Vector2 = data.pos + Vector2(108, 0)
-			tech_graph.draw_line(start, end, BORDER, 2.0)
+			# Nearby children share one horizontal branch between the rows.
+			var branch_y := (start.y + end.y) * 0.5
+			var points := PackedVector2Array([start,Vector2(start.x,branch_y),Vector2(end.x,branch_y),end])
+			if is_equal_approx(start.x,end.x):
+				points = PackedVector2Array([start,end])
+			elif end.y - start.y > 36.0:
+				# Wrapped rows still need a side lane to avoid intervening cards.
+				var gutter: float = data.pos.x - 12
+				points = PackedVector2Array([start,start + Vector2(0,18),Vector2(gutter,start.y + 18),Vector2(gutter,end.y - 18),end - Vector2(0,18),end])
+			tech_graph.draw_polyline(points, BORDER, 2.0)
 	)
 	_rebuild_tech_nodes()
-	var focus_id := "barriers"
-	for id in game.researched:
-		if tech_buttons.has(id): focus_id = id
-	tech_scroll.call_deferred("center_on_tech", game.TECH[focus_id].pos + Vector2(108, 64))
+	focus_tech_view()
 	tech_material_strip = Control.new()
 	tech_material_strip.position = Vector2(24, 620)
 	tech_material_strip.size = Vector2(912, 28)
@@ -925,11 +962,30 @@ func show_tech_tree() -> void:
 	tech_material_signature = -1
 	apply_graphics_style(content)
 	refresh()
+func toggle_tech_view() -> void:
+	tech_list_mode = not tech_list_mode
+	tech_scroll.list_mode = tech_list_mode
+	tech_mode_button.text = "Tree view" if tech_list_mode else "List view"
+	_rebuild_tech_nodes()
+	focus_tech_view()
+func focus_tech_view() -> void:
+	if tech_list_mode:
+		tech_scroll.call_deferred("show_list_section", tech_list_available_y)
+		return
+	var focus_id := "barriers"
+	for id in game.researched:
+		if not tech_buttons.has(id): continue
+		for child in tech_buttons:
+			if game.TECH[child].parent == id:
+				focus_id = id
+				break
+	tech_scroll.call_deferred("center_on_tech", game.TECH[focus_id].pos + Vector2(108, 64))
 func visible_tech_ids() -> Array[String]:
 	var result: Array[String] = []
 	for id in game.TECH:
-		if id not in ["barriers", "iron_barriers", "slugger_shield", "time_speed", "turret_range", "copper_storage", "auto_scrap", "splitter", "weapons"]: continue
+		if id not in ["teleporters", "barriers", "solar_speed", "solar_health", "healer", "iron_barriers", "slugger_shield", "refining", "iron_storage", "time_speed", "turret_range", "copper_storage", "splitter", "weapons"]: continue
 		var parent: String = game.TECH[id].parent
+		if not game.tech_core_unlocked(id) and not game.researched.has(id): continue
 		if game.TECH[id].get("starter_color", false) and not game.researched.has(parent): continue
 		if game.researched.has(id) or parent == "" or game.researched.has(parent): result.append(id)
 	return result
@@ -953,48 +1009,88 @@ func _rebuild_tech_nodes() -> void:
 		child.queue_free()
 	tech_buttons.clear()
 	var visible_ids := visible_tech_ids()
-	var cursor: Array[float] = [20.0]
-	for id in visible_ids:
-		if game.TECH[id].parent == "" or not visible_ids.has(game.TECH[id].parent): layout_tech_branch(id, 0, visible_ids, cursor)
-	var bottom := 120.0
+	var positions := tech_positions(visible_ids)
+	var card_size := Vector2(444, 136) if tech_list_mode else Vector2(216, 128)
 	for id in visible_ids:
 		var data: Dictionary = game.TECH[id]
-		var node := button(tech_graph, "", data.pos, Vector2(216, 128), func():
+		var node := button(tech_graph, "", positions[id], card_size, func():
 			if game.research(id):
 				_rebuild_tech_nodes()
 				refresh()
+				if tech_list_mode: focus_tech_view()
 			elif not game.researched.has(id) and not game.affordable(data.cost):
 				floating_caption("Not enough resources...", root.get_global_mouse_position() + Vector2(12, -20), ERROR_COLOR)
 				game.play_sound("error")
 		)
-		var sprite := icon(node, game.ui_textures[data.icon], Vector2(8, 8), Vector2(32, 32))
+		var sprite := icon(node, game.ui_textures[data.icon], Vector2(16, 18) if tech_list_mode else Vector2(8, 8), Vector2(44, 44) if tech_list_mode else Vector2(32, 32))
 		node.set_meta("tech_card", true)
 		for state_name in ["normal", "hover", "pressed", "disabled", "focus"]:
-			node.add_theme_stylebox_override(state_name, style(Color.TRANSPARENT, BORDER, 3))
+			node.add_theme_stylebox_override(state_name, style(BACK, BORDER, 3))
 		if data.has("color"): sprite.modulate = game.TEAM_COLORS[data.color]
-		var title := label(node, data.name, Vector2(48, 6), Vector2(160, 36), 13)
+		var title := label(node, data.name, Vector2(80, 10) if tech_list_mode else Vector2(48, 6), Vector2(348, 36) if tech_list_mode else Vector2(160, 36), 15 if tech_list_mode else 13)
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		title.clip_text = false
-		var effect := label(node, tech_stat_summary(id), Vector2(8, 44), Vector2(200, 28), 10, ACCENT)
+		var effect := label(node, tech_stat_summary(id), Vector2(80, 46) if tech_list_mode else Vector2(8, 44), Vector2(348, 36) if tech_list_mode else Vector2(200, 28), 11 if tech_list_mode else 10, ACCENT)
 		effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		effect.clip_text = false
-		if not game.researched.has(id):
-			var visible_cost: Dictionary = {}
-			for resource in data.cost: visible_cost[resource] = data.cost[resource]
-			cost_row(node, visible_cost, Vector2(8, 76))
-		var state := label(node, "", Vector2(8, 104), Vector2(200, 20), 10, ACCENT)
+		var visible_cost: Dictionary = {}
+		for resource in data.cost: visible_cost[resource] = data.cost[resource]
+		cost_row(node, visible_cost, Vector2(80, 94) if tech_list_mode else Vector2(8, 76))
+		var state := label(node, "", Vector2(80, 114) if tech_list_mode else Vector2(8, 104), Vector2(348, 18) if tech_list_mode else Vector2(200, 20), 10, ACCENT)
 		node.set_meta("tutorial_glow", id == "barriers" and not game.researched.has(id) and game.affordable(data.cost))
 		tech_buttons[id] = {"button": node, "state": state, "effect": effect}
-		bottom = maxf(bottom, data.pos.y + 144)
 	var region := Rect2()
 	for id in visible_ids:
-		var rect := Rect2(game.TECH[id].pos, Vector2(216, 128))
+		var rect := Rect2(positions[id], card_size)
 		region = rect if region.size == Vector2.ZERO else region.merge(rect)
-	region = region.grow(20)
+	if tech_list_mode:
+		region = Rect2(Vector2.ZERO, Vector2(960, maxf(region.end.y + 24, tech_list_available_y + tech_scroll.size.y - 112)))
+	else: region = region.grow(20)
 	tech_graph.custom_minimum_size = region.end
 	tech_scroll.configure(tech_graph, region)
 	tech_graph.queue_redraw()
 	_refresh_research()
+func tech_positions(visible_ids: Array[String]) -> Dictionary:
+	var positions := {}
+	if not tech_list_mode:
+		var levels := {}
+		for id in visible_ids:
+			var depth := 0
+			var parent: String = game.TECH[id].parent
+			while visible_ids.has(parent):
+				depth += 1
+				parent = game.TECH[parent].parent
+			if not levels.has(depth): levels[depth] = []
+			levels[depth].append(id)
+		var depths: Array = levels.keys()
+		depths.sort()
+		var y := 20.0
+		for depth in depths:
+			var entries: Array = levels[depth]
+			for index in entries.size():
+				var row_count := mini(4,entries.size() - (index / 4) * 4)
+				game.TECH[entries[index]].pos = Vector2(20 + (4-row_count) * 120 + (index % 4) * 240,y + (index / 4) * 164)
+			y += ceili(entries.size() / 4.0) * 164
+		for id in visible_ids: positions[id] = game.TECH[id].pos
+		return positions
+	var y := 16.0
+	tech_list_available_y = 0.0
+	for researched in [true, false]:
+		var entries: Array[String] = []
+		if researched:
+			for id in game.researched:
+				if visible_ids.has(id): entries.append(id)
+		else:
+			for id in visible_ids:
+				if not game.researched.has(id): entries.append(id)
+		if entries.is_empty(): continue
+		if not researched: tech_list_available_y = y
+		label(tech_graph, "RESEARCHED" if researched else "AVAILABLE", Vector2(24, y), Vector2(912, 28), 15, ACCENT)
+		y += 38
+		for index in entries.size(): positions[entries[index]] = Vector2(24 + (index % 2) * 468,y + (index / 2) * 148)
+		y += ceili(entries.size() / 2.0) * 148
+		y += 14
+	return positions
 func layout_tech_branch(id: String, depth: int, visible_ids: Array[String], cursor: Array[float]) -> float:
 	var children: Array[String] = []
 	for candidate in visible_ids:
@@ -1037,11 +1133,14 @@ func _refresh_research() -> void:
 		var parent_ready: bool = data.parent == "" or game.researched.has(data.parent)
 		node.button.disabled = done or not parent_ready
 		var amounts: Dictionary = node.button.get_meta("cost_labels", {})
+		var show_cost: bool = not done or (Input.is_key_pressed(KEY_ALT) and node.button.get_global_rect().has_point(node.button.get_global_mouse_position()))
+		for sprite in node.button.get_meta("cost_sprites", []): sprite.visible = show_cost
+		for amount in amounts.values(): amount.visible = show_cost
 		for resource in amounts:
 			amounts[resource].add_theme_color_override("font_color", Color.WHITE if game.inventory.get(resource, 0) >= data.cost[resource] else ERROR_COLOR)
-		node.state.text = "RESEARCHED" if done else ("LOCKED" if not parent_ready else ("RESEARCH" if game.affordable(data.cost) else "INSUFFICIENT"))
-		node.button.add_theme_stylebox_override("normal", style(Color("342025") if done else Color.TRANSPARENT, BORDER, 3))
-		node.button.add_theme_stylebox_override("disabled", style(Color("342025") if done else Color.TRANSPARENT, BORDER, 3))
+		node.state.text = "RESEARCHED" if done else ""
+		node.button.add_theme_stylebox_override("normal", style(Color("342025") if done else BACK, BORDER, 3))
+		node.button.add_theme_stylebox_override("disabled", style(Color("342025") if done else BACK, BORDER, 3))
 func show_affinity_picker(origin: Vector2) -> void:
 	if is_instance_valid(radial): radial.queue_free()
 	radial = Control.new()
@@ -1087,11 +1186,12 @@ func _sync_tutorial_ui() -> void:
 	if game.researched.has("barriers") or progress.barrier_tree_closed: progress.ui_revealed.split = true
 	if game.tutorial_enabled and game.researched.has("barriers"): progress.ui_revealed.barrier_building = true
 	var central: String = "Use the arrow button or save menu to roll back time." if game.lost else progress.central_message()
-	tutorial_prompt.visible = game.lost or (not sandbox and central != "")
+	tutorial_prompt.visible = game.lost or game.core_under_attack or (not sandbox and central != "")
 	if is_instance_valid(game.capture_effect) and game.capture_effect.active: tutorial_prompt.visible = false
-	tutorial_prompt.text = central
+	tutorial_prompt.text = preload("res://scripts/display_text.gd").format(central)
 	var row_index := 0
-	for resource in resource_views:
+	var inventory_order: Array = resource_views.keys()
+	for resource in inventory_order:
 		if game.inventory[resource] > 0: game.discovered_resources[resource] = true
 		var seen: bool = game.discovered_resources.has(resource)
 		var view: Dictionary = resource_views[resource]
@@ -1136,7 +1236,7 @@ func _sync_tutorial_ui() -> void:
 			target.visible = group in ["Infrastructure", "Defence"]
 			if category == "Structures": category = "Infrastructure"
 		else: target.visible = group == "Structures"
-		target.set_meta("tutorial_glow", target.visible and (progress.menu_should_glow() or progress.category_should_glow(group)))
+		target.set_meta("tutorial_glow", target.visible and (progress.menu_should_glow() or progress.category_should_glow(group) or (group in ["Structures", "Defence"] and progress.second_turret_hint_active())))
 		if not target.visible or expanded.visible:
 			var hint = target.get_node_or_null("Hotkey")
 			if hint != null: hint.hide()
@@ -1219,12 +1319,15 @@ func set_button_icon(target: Button, id: String) -> void:
 
 func tech_stat_summary(id: String) -> String:
 	match id:
-		"copper_storage": return "+50 copper capacity per silo"
-		"auto_scrap": return "Collect scrap automatically after 2s"
+		"solar_speed": return "Solar attack interval: 2s -> 1s"
+		"solar_health": return "Solar health: +10 HP"
+		"copper_storage": return "+50 chicken nuggets capacity per silo when powered"
 		"build_hotkeys": return "Select menus and buildings: 1–9"
-		"iron_barriers": return "Barrier health ×3"
+		"iron_barriers": return "Fish scale barrier: 120 HP"
 		"slugger_shield": return "Blocks one hit; recharges after each wave"
-		"time_speed": return "Press E for x3 speed"
+		"refining": return "Turns Chicken Nuggets and Fish Scales into Pink Stuff."
+		"iron_storage": return "+40 fish scales capacity per silo when powered"
+		"time_speed": return "Press E for x5 speed"
 		"conveyor_speed": return "Conveyors: 1 → 2 items / second"
 		"turret_range":
 			var base: float = game.BUILDINGS.solar.range / game.TILE
@@ -1233,7 +1336,7 @@ func tech_stat_summary(id: String) -> String:
 		"armor": return "+25% building health"
 		"mining": return "+30% extraction speed"
 		"damage": return "+25% turret damage"
-	return ""
+	return str(game.TECH.get(id, {}).get("description", ""))
 
 
 

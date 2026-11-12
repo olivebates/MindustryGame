@@ -1,4 +1,4 @@
-﻿extends Node2D
+extends Node2D
 ## A presentation-only sequence; game pause and checkpoint data remain independent.
 const BANNER_DURATION := 1.6
 const PAN_DURATION := 1.4
@@ -9,9 +9,14 @@ var active := false
 var time := 0.0
 var origin := Vector2.ZERO
 var old_visibility: Dictionary = {}
+var revealed_visibility: Dictionary = {}
+var reveal_order: Array[Vector3] = []
+var frontier_index := 0
+var visibility_generation := 0
 var reveal_radius := 0.0
 var reveal_extent := 640.0
 var banner: Label
+var new_tech_label: Label
 var pan_started := false
 var pan_cancelled := false
 var pan_from := Vector2.ZERO
@@ -23,29 +28,42 @@ func tour_duration() -> float:
 func _ready() -> void:
 	z_index = 202
 	material = game.material
-	banner = game.hud.label(game.hud.root, "Core secured", Vector2.ZERO, Vector2(700, 80), 36, Color("fff0cc"))
-	banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	banner.offset_left = -350
-	banner.offset_right = 350
-	banner.offset_top = -60
-	banner.offset_bottom = 20
+	banner = game.hud.label(game.hud.root, "Core successfully defended!", Vector2.ZERO, Vector2(1200, 74), 36, Color("83d780"))
+	banner.anchor_left = 0.5
+	banner.anchor_right = 0.5
+	banner.offset_left = -600
+	banner.offset_right = 600
+	banner.offset_top = 112
+	banner.offset_bottom = 186
 	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	banner.z_index = 80
-	banner.add_theme_color_override("font_shadow_color", Color(0.92, 0.48, 0.15, 0.65))
+	banner.add_theme_color_override("font_shadow_color", Color(0.2, 0.65, 0.35, 0.5))
 	banner.add_theme_constant_override("shadow_outline_size", 6)
 	banner.hide()
+	new_tech_label = game.hud.label(banner, "New tech unlocked", Vector2(0, 68), Vector2(1200, 32), 18, Color("b7e6b1"))
+	new_tech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 func begin(cell: Vector2i) -> void:
 	cancel()
 	active = true
 	time = 0
 	origin = game.cell_center(cell)
 	old_visibility = game.visible_cells.duplicate()
+	revealed_visibility = old_visibility.duplicate()
+	reveal_order.clear()
+	frontier_index = 0
+	visibility_generation += 1
 	reveal_radius = 0
 	reveal_extent = game.TILE * 20
 	pan_started = false
 	pan_cancelled = false
 	pan_points.clear()
+	var reached: int = maxi(game.cores.size(), int(game.tutorial.ui_revealed.get("max_core_count", 1)))
+	var next_count: int = game.cores.size() + (0 if game.cores.has(cell) else 1)
+	new_tech_label.visible = false
+	for id in game.TECH:
+		var required: int = int(game.TECH[id].get("core", 1))
+		if not game.researched.has(id) and required > reached and required <= next_count: new_tech_label.visible = true
 	banner.modulate.a = 0
 	banner.show()
 	game.play_sound("core_capture")
@@ -53,22 +71,41 @@ func begin(cell: Vector2i) -> void:
 	queue_redraw()
 func update_reveal_extent() -> void:
 	if not active: return
+	revealed_visibility.clear()
+	reveal_order.clear()
+	frontier_index = 0
 	for cell in game.visible_cells:
-		if not old_visibility.has(cell): reveal_extent = maxf(reveal_extent, origin.distance_to(game.cell_center(cell)) + game.TILE)
+		if old_visibility.has(cell):
+			revealed_visibility[cell] = true
+		else:
+			var distance_squared: float = origin.distance_squared_to(game.cell_center(cell))
+			reveal_extent = maxf(reveal_extent,sqrt(distance_squared) + game.TILE)
+			reveal_order.append(Vector3(cell.x,cell.y,distance_squared))
+	reveal_order.sort_custom(func(a: Vector3,b: Vector3): return a.z < b.z)
+	visibility_generation += 1
+	advance_visibility()
+func advance_visibility() -> void:
+	var radius_squared := reveal_radius * reveal_radius
+	while frontier_index < reveal_order.size() and reveal_order[frontier_index].z <= radius_squared:
+		var next := reveal_order[frontier_index]
+		revealed_visibility[Vector2i(next.x,next.y)] = true
+		frontier_index += 1
 func cell_revealed(cell: Vector2i) -> bool:
-	return not active or old_visibility.has(cell) or origin.distance_squared_to(game.cell_center(cell)) <= reveal_radius * reveal_radius
+	return not active or revealed_visibility.has(cell)
 func cancel_pan() -> void:
 	if active and time >= BANNER_DURATION: pan_cancelled = true
 func camera_target() -> Vector2:
-	return origin.clamp(Vector2(180, 100), Vector2(game.WIDTH * game.TILE - 180, game.HEIGHT * game.TILE - 100))
+	return game.clamp_camera_position(origin)
 func _process(dt: float) -> void: advance(dt)
 func advance(dt: float) -> void:
 	if not active: return
 	time += dt
 	var progress := clampf((time - REVEAL_DELAY) / REVEAL_DURATION, 0, 1)
 	reveal_radius = reveal_extent * progress
-	banner.visible = time < BANNER_DURATION
-	banner.modulate.a = minf(clampf(time / 0.16, 0, 1), clampf((BANNER_DURATION - time) / 0.35, 0, 1))
+	advance_visibility()
+	var banner_end := BANNER_DURATION + PAN_DURATION
+	banner.visible = time < banner_end
+	banner.modulate.a = minf(clampf(time / 0.16, 0, 1), clampf((banner_end - time) / 0.35, 0, 1))
 	if time >= BANNER_DURATION and not pan_cancelled:
 		if not pan_started:
 			pan_from = game.camera.position
@@ -98,6 +135,10 @@ func advance(dt: float) -> void:
 func cancel() -> void:
 	active = false
 	old_visibility.clear()
+	revealed_visibility.clear()
+	reveal_order.clear()
+	frontier_index = 0
+	visibility_generation += 1
 	if is_instance_valid(banner): banner.hide()
 	if is_instance_valid(game.fog): game.fog.queue_redraw()
 	queue_redraw()

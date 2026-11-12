@@ -1,17 +1,15 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-<path d="M23 18H37L45 25V39L37 46H23L16 39V25Z" fill="#142a36"/>
-<path d="M24 20H36L42 26V38L36 43H24L19 38V26Z" fill="#91a9ae"/>
-<path d="M25 21H35L39 25H23Z" fill="#d9e4d9"/>
-<path d="M25 26H39V38H25Z" fill="#3f5d6c"/>
-<path d="M30 24H55V40H30Z" fill="#172c39"/>
-<path d="M32 26H56V38H32Z" fill="#7f9ba4"/>
-<path d="M32 26H55V29H32Z" fill="#d1ddd6"/>
-<path d="M35 30H53V35H35Z" fill="#4e6d7b"/>
-<path d="M39 27H42V37H39ZM47 27H50V37H47Z" fill="#2b4655"/>
-<path d="M53 22H62V42H53Z" fill="#182d3b"/>
-<path d="M55 24H62V40H55Z" fill="#9eb2b3"/>
-<path d="M55 24H62V27H55Z" fill="#e5ebdb"/>
-<path d="M58 28H63V36H58Z" fill="#0c202d"/>
-<path d="M54 28H56V31H54ZM54 33H56V36H54Z" fill="#314d5b"/>
-<path d="M22 28H27V36H22Z" fill="#d0ded5"/>
-<path d="M23 29H26V35H23Z" fill="#637f8a"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<path d="M40 27Q28 28 25 20L23 11Q24 3 31 4L39 7L45 16L44 25M40 37Q28 36 25 44L23 53Q24 61 31 60L39 57L45 48L44 39" fill="#8b9eb1" stroke="#233c49" stroke-width="2"/>
+<path d="M28 9Q32 5 37 12L41 21L35 23L29 18Z" fill="#b6c2ce"/>
+<path d="M28 55Q32 59 37 52L41 43L35 41L29 46Z" fill="#69829b"/>
+<path d="M28 12L31 19L37 23M28 52L31 45L37 41" fill="none" stroke="#657f98" stroke-width="2"/>
+<path d="M39 24Q34 17 40 13Q48 12 52 23L53 30L52 41Q48 52 40 51Q34 47 39 40Z" fill="#8a9db1" stroke="#233c49" stroke-width="2"/>
+<path d="M40 19Q45 14 48 22L48 28L42 29Z" fill="#b7c3cf"/>
+<path d="M39 42L45 39L50 41Q47 50 41 48Z" fill="#617a92"/>
+<path d="M48 23Q56 18 59 20Q61 25 54 28L50 28M48 41Q56 46 59 44Q61 39 54 36L50 36" fill="#f7f1dc" stroke="#465769" stroke-width="1.5"/>
+<path d="M47 27Q53 25 57 29Q61 34 58 40L55 45L50 45L48 42L52 38L53 33L48 35Z" fill="#9aabbb" stroke="#2b4857" stroke-width="2"/>
+<path d="M50 28Q56 27 57 32L55 36L53 35L54 31Z" fill="#b5c2ce"/>
+<path d="M51 38L55 40M50 41L53 43" stroke="#667f98" stroke-width="2"/>
+<ellipse cx="47" cy="23" rx="2.5" ry="2" fill="#203b49"/><ellipse cx="47" cy="41" rx="2.5" ry="2" fill="#203b49"/>
+<path d="M46 22H48M46 40H48" stroke="#ffffff" stroke-width="1.5"/>
+</svg>

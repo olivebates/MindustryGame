@@ -13,11 +13,15 @@ func run() -> void:
 	var previous: Dictionary = game.visible_cells.duplicate()
 	var camera_start: Vector2 = game.camera.position
 	game._complete_wave()
-	# A manual snapshot here tests cinematic-safe restoration; automatic saves now wait for launch.
-	game.saves.capture()
+	check(not game.paused and not game.capture_effect.active, "Final enemy defeat leaves one second before capture and automatic pause")
+	game.speed = 3
+	game.advance_final_wave_completion(0.9)
+	game._complete_wave()
+	check(not game.paused and game.final_wave_completion_remaining > 0, "Repeated completion checks and speedup do not shorten or restart the delay")
+	game.advance_final_wave_completion(0.1)
 	var effect = game.capture_effect
-	check(effect.active and effect.banner.visible and effect.banner.text == "Core secured", "Core conversion starts the capture banner and pulse")
-	check(game.paused and game.wave_timer == 360, "Capture preserves paused six-minute preparation")
+	check(effect.active and effect.banner.visible and effect.banner.text == "Core successfully defended!", "Core conversion starts the victory banner and pulse")
+	check(game.paused and game.wave_timer == 120, "Capture pauses with two minutes of preparation")
 	check(game.saves.load_snapshot(game.saves.current)[6] == effect.camera_target(), "Capture checkpoint focuses new core without replaying cinematic")
 	check(game.saves.load_snapshot(game.saves.current)[7] == Vector2.ONE, "Capture checkpoint records the final 100 percent zoom")
 	check(effect.origin == game.cell_center(game.current_core) and effect.old_visibility == previous, "Capture records new core and prior revealed terrain")
@@ -30,7 +34,7 @@ func run() -> void:
 	effect.advance(0.8)
 	check(effect.reveal_radius == 0 and game.camera.position == camera_start and effect.banner.visible, "Pulse and banner precede terrain reveal and camera movement")
 	effect.advance(0.8)
-	check(not effect.banner.visible and effect.pan_started and game.camera.position == camera_start, "Camera pan starts only after banner disappears")
+	check(effect.banner.visible and effect.pan_started and game.camera.position == camera_start, "Victory banner remains visible during camera movement")
 	effect.advance(0.7)
 	var halfway: Vector2 = game.camera.position
 	check(halfway.distance_to(camera_start) > 0 and halfway.distance_to(effect.camera_target()) > 1, "Camera eases through an intermediate position")

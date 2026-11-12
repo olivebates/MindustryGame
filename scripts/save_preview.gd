@@ -6,6 +6,9 @@ var textures: Dictionary = {}
 var terrain: Dictionary = {}
 var conveyor_upgraded := false
 var iron_barriers := false
+var forest_cells: Dictionary = {}
+var forest_texture: Texture2D
+var ground_texture: Texture2D
 func configure(game: Node2D, snapshot: Array = []) -> void:
 	iron_barriers = game.researched.has("iron_barriers") if snapshot.is_empty() else snapshot[1][1].has("iron_barriers")
 	core = game.current_core if snapshot.is_empty() else snapshot[1][9]
@@ -17,6 +20,9 @@ func configure(game: Node2D, snapshot: Array = []) -> void:
 			for i in game.saves.BUILD_FIELDS.size(): building[game.saves.BUILD_FIELDS[i]] = row[i + 1]
 			buildings[row[0]] = building
 	textures = game.sprite_rasters(64).duplicate()
+	forest_cells = game.rocks
+	forest_texture = preload("res://scripts/forest_terrain.gd").texture(64)
+	ground_texture = preload("res://scripts/ground_terrain.gd").texture(64)
 	for id in ["ground", "rock", "copper", "iron", "verdite"]: terrain[id] = preload("res://scripts/pixel_art.gd").texture(load("res://assets/terrain/%s.svg" % id), Vector2i(64, 64))
 	for y in range(core.y - 20, core.y + 21):
 		for x in range(core.x - 20, core.x + 21):
@@ -53,8 +59,12 @@ func capture_bounds(game: Node2D) -> Rect2:
 func _draw() -> void:
 	for cell in tiles:
 		var rect := Rect2(Vector2(cell * 32), Vector2(32, 32))
-		draw_texture_rect(terrain.ground, rect, false)
-		if tiles[cell] != "ground": draw_texture_rect(terrain[tiles[cell]], rect, false)
+		var ground_coords := preload("res://scripts/ground_terrain.gd").atlas_coords(cell)
+		draw_texture_rect_region(ground_texture,rect,Rect2(Vector2(ground_coords*64),Vector2(64,64)))
+		if tiles[cell] == "rock":
+			var coords := preload("res://scripts/forest_terrain.gd").atlas_coords(forest_cells, cell)
+			draw_texture_rect_region(forest_texture, rect, Rect2(Vector2(coords * 64), Vector2(64, 64)))
+		elif tiles[cell] != "ground": draw_texture_rect(terrain[tiles[cell]], rect, false)
 	for cell in buildings:
 		if not tiles.has(cell): continue
 		var b: Dictionary = buildings[cell]
@@ -63,7 +73,6 @@ func _draw() -> void:
 		var center := Vector2(cell * 32) + Vector2.ONE * 16 * footprint
 		var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not conveyor_upgraded else textures[b.kind]
 		if b.kind == "solar": texture = textures.solar_base
-		if b.kind == "wall" and iron_barriers: texture = textures.wall_iron
 		if b.kind == "core" and cell != core: texture = textures.core_inactive
 		if b.get("pending", false):
 			preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(center - Vector2.ONE * dimension / 2, Vector2.ONE * dimension))

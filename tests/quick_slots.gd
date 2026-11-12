@@ -11,10 +11,10 @@ func run() -> void:
 	game.saves.entries.clear()
 	game.saves.current = -1
 	game.saves.pending_branch = false
-	check(game.BUILDINGS.solar.hp == 40 and game.BUILDINGS.wall.hp == 40, "Requested building health")
+	check(game.BUILDINGS.solar.hp == 30 and game.BUILDINGS.wall.hp == 40, "Requested building health")
 	game._add_building(Vector2i(24, 25), "solar", 0)
 	game._add_building(Vector2i(23, 25), "wall", 0)
-	check(game.buildings[Vector2i(24, 25)].hp == 40 and game.buildings[Vector2i(23, 25)].hp == 40, "New structures use updated health")
+	check(game.buildings[Vector2i(24, 25)].hp == 30 and game.buildings[Vector2i(23, 25)].hp == 40, "New structures use updated health")
 	game.saves.capture()
 	var history_size: int = game.saves.entries.size()
 	for slot in range(1, 10):

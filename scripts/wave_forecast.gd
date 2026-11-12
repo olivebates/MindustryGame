@@ -33,6 +33,7 @@ static func build(game: Node2D, number: int, indices: Array, states: Array = [],
 		var explicit: bool = gate.has_wave_enemy_override(offsets[index])
 		var maximum := 0
 		var counts: Dictionary = {}
+		var colored: Dictionary = {}
 		var emitted_colors: Array[String] = []
 		for kind in roster:
 			if game.Content.ENEMY_TYPES.has(kind):
@@ -58,5 +59,7 @@ static func build(game: Node2D, number: int, indices: Array, states: Array = [],
 			units.append({"kind": kind, "pos": position, "color": color, "wave_id": number})
 			if not emitted_colors.has(color): emitted_colors.append(color)
 			counts[kind] = counts.get(kind, 0) + 1
-		by_spawn[index] = {"counts": counts, "budget": credits, "colors": emitted_colors}
+			if not colored.has(color): colored[color] = {}
+			colored[color][kind] = colored[color].get(kind, 0) + 1
+		by_spawn[index] = {"counts": counts, "budget": credits, "colors": emitted_colors, "colored": colored}
 	return {"units": units, "by_spawn": by_spawn, "budget": budget, "color": shared_color, "rng_state": rng.state}

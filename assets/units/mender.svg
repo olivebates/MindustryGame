@@ -1,1 +1,18 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><ellipse cx="32" cy="37" rx="28" ry="22" fill="#11171b" fill-opacity=".5"/><path d="M8 5H49V15H8ZM8 49H49V59H8Z" fill="#4e5659" stroke="#252c31" stroke-width="2"/><path d="M14 5V15M25 5V15M37 5V15M14 49V59M25 49V59M37 49V59" stroke="#909898" stroke-width="2"/><g fill="#afb6b5" stroke="#363f42" stroke-width="2"><path d="M12 10H48L57 21V44L47 54H13L5 43V21Z"/><path d="M25 17H35V27H45V37H35V47H25V37H15V27H25Z" fill="#e2e4e3"/></g><circle cx="29" cy="32" r="5" fill="#e7ebe5" stroke="#737f80" stroke-width="2"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<path d="M12 22L7 15L10 10L17 12L23 21M12 42L7 49L10 54L17 52L23 43M36 20L43 11L49 14L46 23M36 44L43 53L49 50L46 41" fill="#88c75f" stroke="#243f43" stroke-width="2"/>
+<path d="M10 14L13 15M10 50L13 49M44 14L46 17M44 50L46 47" stroke="#b1da96" stroke-width="2"/>
+<path d="M10 30L3 32L10 36Z" fill="#9cd079" stroke="#243f43" stroke-width="2"/>
+<path d="M7 24Q10 10 27 9Q43 9 49 23L50 39Q44 54 27 55Q10 54 7 40Z" fill="#578e32" stroke="#243f43" stroke-width="2"/>
+<path d="M10 25Q14 13 27 12Q40 13 46 25L47 38Q41 51 27 52Q13 51 10 39Z" fill="#93cc6d"/>
+<path d="M14 23L25 17L37 21L42 32L36 43L23 46L13 37Z" fill="#6db23f" stroke="#3b6122" stroke-width="2"/>
+<path d="M25 17L25 29L14 23M25 29L23 46M25 29L42 32M25 29L37 21" fill="none" stroke="#3b6122" stroke-width="2.5"/>
+<path d="M17 23L23 20L23 26L18 28ZM28 20L34 22L29 26L27 25ZM28 33L37 34L34 39L27 41ZM16 32L21 31L20 40L16 36Z" fill="#a0d27e"/>
+<path d="M14 18L12 24M21 14L25 12M36 15L40 18M46 27L47 32M43 43L39 47M28 51L23 50M13 43L11 38" stroke="#5d9936" stroke-width="2"/>
+<path d="M16 18L21 16L23 17" fill="none" stroke="#edf1de" stroke-width="2" stroke-linecap="round"/>
+<path d="M43 26Q48 23 54 25L59 28L61 32L59 36L54 39Q48 41 43 38Z" fill="#94cc6f" stroke="#284446" stroke-width="2"/>
+<path d="M45 27L52 26L57 29L53 31L46 30Z" fill="#edf0da"/>
+<path d="M45 36L51 37L57 34L57 37L52 39L46 38Z" fill="#6baf3e"/>
+<ellipse cx="54" cy="27" rx="2.3" ry="1.8" fill="#203d42"/><ellipse cx="54" cy="37" rx="2.3" ry="1.8" fill="#203d42"/>
+<path d="M53 26H55M53 36H55" stroke="#ffffff" stroke-width="1.3"/>
+<path d="M58 30L61 32L58 34" fill="none" stroke="#65a63a" stroke-width="2"/>
+</svg>

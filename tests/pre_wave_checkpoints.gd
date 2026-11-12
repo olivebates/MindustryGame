@@ -18,21 +18,21 @@ func run() -> void:
 		gate.waves_completed = 0
 	game.inventory.copper = 17
 	game.launch_wave()
-	check(game.saves.entries.size() == 1 and game.saves.entries[0].wave == 1, "Launching wave one creates its labeled checkpoint")
-	var data: Array = game.saves.load_snapshot(0)
-	check(data[1][3] == 0 and data[1][23].is_empty() and data[1][24] == 0 and not data[1][26], "Checkpoint is captured before the new wave is queued")
-	check(game.wave == 1 and game.spawn_remaining > 0, "New wave launches only after checkpoint capture")
-	check(game.saves.restore(0) and game.paused and game.wave == 0 and game.spawn_remaining == 0 and game.spawn_queue.is_empty(), "Loading the checkpoint does not send its wave")
-	game.toggle_pause()
-	game.simulate(0.1)
-	check(game.wave == 0 and game.spawn_remaining == 0 and game.wave_timer > 179, "Unpausing allows building time instead of immediately relaunching")
-	game.launch_wave()
-	var count: int = game.saves.entries.size()
+	check(game.saves.entries.is_empty(), "Calling a wave no longer creates a checkpoint")
+	check(game.wave == 1 and game.spawn_remaining > 0, "New wave launches without a checkpoint")
 	game.enemies.clear()
 	game.spawn_queue.clear()
 	game.spawn_remaining = 0
+	game.wave_timer = 90
+	game.inventory.copper = 23
 	game._complete_wave(1)
-	check(game.saves.entries.size() == count, "Completing a wave no longer creates a save")
+	check(game.saves.entries.size() == 1 and game.saves.entries[0].wave == 1, "Completing the wave creates its labeled checkpoint")
+	var data: Array = game.saves.load_snapshot(0)
+	check(data[1][3] == 1 and data[1][23].is_empty() and data[1][24] == 0 and data[1][0].copper == 23, "Checkpoint captures post-wave resources and spawning state")
+	check(game.saves.restore(0) and game.paused and game.wave == 1 and game.inventory.copper == 23, "Loading restores the post-wave checkpoint and pauses")
+	game.toggle_pause()
+	game.simulate(0.1)
+	check(game.wave == 1 and game.wave_timer > 89, "Unpausing continues the saved inter-wave timer")
 	var cell := Vector2i(26, 25)
 	game._add_building(cell, "turret", 0)
 	check(game.buildings[cell].ammo == 8 and game.turret_ammo_capacity("turret") == 8, "Sluggers spawn with eight rounds")
@@ -46,6 +46,6 @@ func run() -> void:
 	game.buildings[cell].ammo = 80
 	game.saves.capture()
 	check(game.saves.restore(game.saves.current) and game.buildings[cell].ammo == 8, "Loading older high-ammo Sluggers clamps them to eight rounds")
-	print("PRE-WAVE CHECKPOINT CHECKS: %d passed, %d failed" % [passed, failed])
+	print("POST-WAVE CHECKPOINT CHECKS: %d passed, %d failed" % [passed, failed])
 	game.free()
 	quit(1 if failed else 0)

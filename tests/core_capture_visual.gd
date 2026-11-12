@@ -12,6 +12,7 @@ func run() -> void:
 	game.wave_in_progress = true
 	game._reveal_map()
 	game._complete_wave()
+	game.advance_final_wave_completion(1.0)
 	game.capture_effect.advance(0.5)
 	await shot("capture_banner")
 	game.capture_effect.advance(1.8)

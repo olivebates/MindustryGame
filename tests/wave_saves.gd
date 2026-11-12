@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 class WebGame extends "res://scripts/game.gd":
 	func platform_debug_features() -> PackedStringArray: return PackedStringArray(["web", "wasm32"])
 var game
@@ -46,7 +46,7 @@ func run() -> void:
 	game.begin_drag(Vector2i(31, 22))
 	check(game.buildings.has(Vector2i(31, 22)) and game.buildings[Vector2i(31, 22)].color == "red" and not is_instance_valid(game.hud.radial), "One-color turret places directly without a radial menu")
 	game.hud.refresh()
-	check(game.hud.next_button.get_meta("tutorial_glow") and game.hud.next_button.text == "Start", "First Start glows after the turret is placed")
+	check(game.hud.next_button.get_meta("tutorial_glow") and game.hud.next_button.text in ["Start", "Skip"], "First start/skip action glows after the turret is placed")
 	game.select_tool("abolish")
 	game.cancel_build_selection()
 	game.launch_wave()
@@ -70,7 +70,8 @@ func run() -> void:
 	game.simulate(1.9)
 	game.hud.refresh()
 	check(game.hud.tool_hint.text == "", "No pause reminder appears before damage")
-	game._damage_building(game.current_core, 1)
+	# Core damage now has its own higher-priority breach warning.
+	game._damage_building(Vector2i(31, 22), 1)
 	game.tutorial.on_wave_completed(1)
 	game.hud.refresh()
 	check(game.tutorial.central_message() == "Press space to pause and build.", "Pause reminder appears after the first building damage")
@@ -125,6 +126,8 @@ func run() -> void:
 	drill.item = "copper"
 	game._update_items(0.1)
 	check(drill.item == "copper" and game.output_target(center, drill) != center + game.DIRS[drill.next_output], "Extractor waits for its turn under output back pressure")
+	# Isolate serialization from checkpoints created by earlier UI/tutorial checks.
+	game.saves.directory += "_serialization"
 	# Exercise explicit snapshot serialization independently of auto-save scheduling.
 	game.saves.entries.clear()
 	game.saves.current = -1
@@ -136,9 +139,8 @@ func run() -> void:
 	game.wave = 1
 	game.scraps.append({"pos": Vector2(100, 200), "amount": 12, "magnetized": true})
 	game._complete_wave()
-	game.saves.capture()
 	print("SAVE STATUS: ", game.saves.directory, " ", game.saves.last_error)
-	check(game.saves.entries.size() == 1 and FileAccess.file_exists(game.saves.directory.path_join(game.saves.entries[0].file)), "Explicit save writes a persistent checkpoint")
+	check(game.saves.entries.size() == 1 and FileAccess.file_exists(game.saves.directory.path_join(game.saves.entries[0].file)), "Wave completion writes a persistent checkpoint")
 	var original: Array = game.saves.snapshot().duplicate(true)
 	var raw_size := var_to_bytes(original).size()
 	var save_size := FileAccess.get_file_as_bytes(game.saves.directory.path_join(game.saves.entries[0].file)).size()
@@ -149,12 +151,10 @@ func run() -> void:
 	game.wave = 2
 	game.inventory.copper = 123
 	game._complete_wave()
-	game.saves.capture()
 	game.wave = 3
 	game.inventory.copper = 456
 	game._complete_wave()
-	game.saves.capture()
-	check(game.saves.entries.size() == 3, "Each explicit capture adds one checkpoint")
+	check(game.saves.entries.size() == 3, "Each completed wave adds one checkpoint")
 	var history = load("res://scripts/wave_saves.gd").new(game)
 	history.directory = game.saves.directory
 	history.read_index()
@@ -195,7 +195,6 @@ func run() -> void:
 	Input.flush_buffered_events()
 	game.wave = 2
 	game._complete_wave()
-	game.saves.capture()
 	check(game.saves.entries.size() == 2 and game.saves.entries[1].wave == 2, "New waves append to the restored branch")
 	var corrupt_path: String = game.saves.directory.path_join(game.saves.entries[1].file)
 	var file := FileAccess.open(corrupt_path, FileAccess.READ_WRITE)
