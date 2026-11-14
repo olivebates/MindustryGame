@@ -53,6 +53,8 @@ var gain_clock := 0.0
 var preview_kind := ""
 var hovered_core := Vector2i(-1000, -1000)
 var inventory_panel: Panel
+var developer_panel: Panel
+var developer_credit_list: RichTextLabel
 var map_panel: Panel
 var wave_controls: Panel
 var tech_button: Button
@@ -142,6 +144,7 @@ func _ready() -> void:
 	screen_edges.material = edge_material
 	root.add_child(screen_edges)
 	_build_resources()
+	_build_developer_waves()
 	_build_palette()
 	_build_map()
 	_build_wave_controls()
@@ -359,6 +362,34 @@ func layout_cost_amounts(parent: Control, amounts: Dictionary, cost: Dictionary,
 		x += 18 + width + 6
 		index += 1
 
+func _build_developer_waves() -> void:
+	developer_panel = panel(Vector2(168, 0), Vector2(280, 120))
+	developer_panel.name = "DeveloperWaveCredits"
+	developer_panel.visible = false
+	label(developer_panel, "Developer mode", Vector2(8, 8), Vector2(264, 22), 16, ACCENT)
+	developer_credit_list = RichTextLabel.new()
+	developer_credit_list.position = Vector2(8, 36)
+	developer_credit_list.size = Vector2(264, 76)
+	developer_credit_list.scroll_active = true
+	developer_credit_list.scroll_following = true
+	developer_panel.add_child(developer_credit_list)
+
+func refresh_developer_waves() -> void:
+	if not is_instance_valid(developer_panel): return
+	developer_panel.visible = game.developer_mode
+	if not game.developer_mode or game.developer_waves == null: return
+	var search: RefCounted = game.developer_waves
+	developer_panel.position.x = inventory_panel.position.x + inventory_panel.size.x + 8
+	developer_panel.size.y = clampf(100 + search.results.size() * 24, 120, maxf(120, root.size.y - 180))
+	developer_credit_list.size = developer_panel.size - Vector2(16, 44)
+	var lines := PackedStringArray()
+	for result in search.results:
+		lines.append("Round %d: %d-%d" % [result.wave, result.get("g_credits", 0), result.get("h_credits", 0)])
+	if not lines.is_empty(): lines.append("")
+	lines.append(search.status)
+	var content := "\n".join(lines)
+	if developer_credit_list.text != content: developer_credit_list.text = content
+
 func _build_resources() -> void:
 	inventory_panel = panel(Vector2.ZERO, Vector2(160, 1))
 	inventory_panel.name = "MaterialInventory"
@@ -571,6 +602,7 @@ func refresh() -> void:
 	if resources.is_empty(): return
 	game.saves.ensure_learning_loaded()
 	_sync_tutorial_ui()
+	refresh_developer_waves()
 	if category != "" and research_signature != build_menu_signature(): _rebuild_cards()
 	_refresh_resources()
 	var active: bool = game.spawn_remaining > 0 or game.wave_warp_active or game.last_round_active()
@@ -658,7 +690,7 @@ func _process(dt: float) -> void:
 	screen_edges.material.set_shader_parameter("paused", game.paused)
 	screen_edges.material.set_shader_parameter("demolishing", game.active_tool == "abolish")
 	var outlines := PackedVector4Array()
-	for region in [inventory_panel, map_panel, palette, expanded, tooltip]:
+	for region in [inventory_panel, developer_panel, map_panel, palette, expanded, tooltip]:
 		if not is_instance_valid(region) or not region.is_visible_in_tree(): continue
 		var rect: Rect2 = region.get_global_rect()
 		outlines.append(Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))

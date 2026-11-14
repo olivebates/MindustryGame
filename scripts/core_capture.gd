@@ -8,6 +8,8 @@ var game: Node2D
 var active := false
 var time := 0.0
 var origin := Vector2.ZERO
+var previous_origin := Vector2.ZERO
+var reveal_sources: Array[Vector2] = []
 var old_visibility: Dictionary = {}
 var revealed_visibility: Dictionary = {}
 var reveal_order: Array[Vector3] = []
@@ -48,6 +50,11 @@ func begin(cell: Vector2i) -> void:
 	active = true
 	time = 0
 	origin = game.cell_center(cell)
+	previous_origin = game.cell_center(game.current_core)
+	reveal_sources.clear()
+	var steps := maxi(1, ceili(previous_origin.distance_to(origin) / game.TILE))
+	for index in steps + 1:
+		reveal_sources.append(previous_origin.lerp(origin, float(index) / steps))
 	old_visibility = game.visible_cells.duplicate()
 	revealed_visibility = old_visibility.duplicate()
 	reveal_order.clear()
@@ -78,15 +85,25 @@ func update_reveal_extent() -> void:
 		if old_visibility.has(cell):
 			revealed_visibility[cell] = true
 		else:
-			var distance_squared: float = origin.distance_squared_to(game.cell_center(cell))
-			reveal_extent = maxf(reveal_extent,sqrt(distance_squared) + game.TILE)
-			reveal_order.append(Vector3(cell.x,cell.y,distance_squared))
+			var point: Vector2 = game.cell_center(cell)
+			# The new core radiates immediately while the route also spreads
+			# outward from the previous core toward it.
+			var arrival: float = point.distance_to(origin) / (game.TILE * 20.0)
+			for index in reveal_sources.size():
+				var departure := float(index) / maxi(1, reveal_sources.size() - 1)
+				arrival = minf(arrival, departure + point.distance_to(reveal_sources[index]) / (game.TILE * 20.0))
+			reveal_order.append(Vector3(cell.x, cell.y, arrival))
 	reveal_order.sort_custom(func(a: Vector3,b: Vector3): return a.z < b.z)
+	# Normalize arrival times so the entire spreading corridor finishes in
+	# the original reveal duration, including the radial spread at its end.
+	if not reveal_order.is_empty():
+		var last_arrival := maxf(0.001, reveal_order.back().z)
+		for index in reveal_order.size(): reveal_order[index].z /= last_arrival
 	visibility_generation += 1
 	advance_visibility()
 func advance_visibility() -> void:
-	var radius_squared := reveal_radius * reveal_radius
-	while frontier_index < reveal_order.size() and reveal_order[frontier_index].z <= radius_squared:
+	var progress := clampf((time - REVEAL_DELAY) / REVEAL_DURATION, 0, 1)
+	while frontier_index < reveal_order.size() and reveal_order[frontier_index].z <= progress:
 		var next := reveal_order[frontier_index]
 		revealed_visibility[Vector2i(next.x,next.y)] = true
 		frontier_index += 1
@@ -151,7 +168,4 @@ func _draw() -> void:
 		for ring in 3:
 			draw_arc(origin, radius + ring * stroke * 2, 0, TAU, 128, Color(1, 0.77, 0.36, (1 - pulse) * (0.6 / (ring + 1))), stroke)
 		draw_circle(origin, 28 + pulse * 24, Color(1, 0.8, 0.45, (1 - pulse) * 0.18))
-	var progress := clampf((time - REVEAL_DELAY) / REVEAL_DURATION, 0, 1)
-	if progress > 0 and progress < 1:
-		draw_arc(origin, maxf(1, reveal_radius), 0, TAU, 192, Color(0.45, 0.94, 0.85, sin(progress * PI) * 0.7), stroke)
 

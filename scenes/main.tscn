@@ -68,7 +68,7 @@ core_resource_price_increase = Dictionary[String, float]({
 "scrap": 0.0,
 "verdite": 0.0
 })
-credits_per_wave = PackedInt32Array(5, 12, 20, 40, 80, 120, 200, 30, 50, 100)
+credits_per_wave = PackedInt32Array(5, 12, 20, 40, 80, 120, 200, 30, 150, 104)
 possible_colors = PackedStringArray("red")
 allowed_enemies = PackedStringArray("Squirrel", "Tapir", "Bison", "Elephant", "Bunny", "Gazelle", "Horse")
 wave_enemy_lists = Array[PackedStringArray]([PackedStringArray("Squirrel", "Bunny"), PackedStringArray("Bunny", "Squirrel"), PackedStringArray("Squirrel", "Tapir", "Gazelle", "Bunny"), PackedStringArray("Bunny", "Gazelle", "Horse"), PackedStringArray(), PackedStringArray("Bunny", "Squirrel", "Gazelle", "Tapir", "Bison"), PackedStringArray("Horse", "Bunny", "Gazelle"), PackedStringArray("Elephant", "Bison", "Squirrel"), PackedStringArray("Squirrel", "Bunny", "Gazelle", "Horse"), PackedStringArray("Bunny", "Gazelle", "Horse", "Tapir", "Squirrel", "Elephant", "Bison")])

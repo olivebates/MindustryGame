@@ -19,6 +19,16 @@ func run() -> void:
 	game.inventory.iron = iron
 	check(game.place_building(b,"teleporter",0) and game.inventory.copper == copper-30 and game.inventory.iron == iron-5, "Second node charges the pair once")
 	check(game.buildings[a].tunnel_pair == b and game.buildings[b].tunnel_pair == a, "Pair links are reciprocal")
+	check(not game.teleporters.is_output(a) and game.teleporters.is_output(b), "First node is input and second node is output")
+	check(game.can_receive(a, "iron") and not game.can_receive(b, "iron"), "Only the input accepts conveyor cargo")
+	game.extend_drag(b + Vector2i.UP)
+	check(game.buildings[b].dir == 3, "Dragging during second-node placement sets output direction")
+	game.finish_drag()
+	game.selected = "solar"
+	game.begin_drag(b)
+	game.extend_drag(b + Vector2i.RIGHT)
+	game.finish_drag()
+	check(game.buildings[b].dir == 0 and game.selected == "solar" and not game.buildings.has(b + Vector2i.RIGHT), "Output redirection takes priority over selected construction")
 	check(game.building_cost("teleporter") == {"iron":6,"copper":38}, "Next pair price increases by twenty-five percent")
 	game._add_building(b+Vector2i.RIGHT,"belt",0)
 	game.refresh_belt_inputs()
@@ -32,15 +42,33 @@ func run() -> void:
 	game._add_building(b+Vector2i.DOWN,"turret",0)
 	game.buildings[b+Vector2i.DOWN].ammo = 0
 	check(game.splitter_outputs(b,"iron").has(3) and game.splitter_outputs(b,"iron").has(1), "Remote node also outputs to splitters and resource-consuming buildings")
+	game.begin_drag(b)
+	game.finish_drag()
+	check(game.buildings[b].dir == 1 and game.selected == "solar", "Click cycles clockwise to the next receiver even with construction selected")
+	game.begin_drag(b)
+	game.finish_drag()
+	check(game.buildings[b].dir == 3, "Click skips empty directions")
+	game.begin_drag(b)
+	game.finish_drag()
+	check(game.buildings[b].dir == 0, "Click wraps around to a receiving conveyor")
 	game.buildings[a].item = "iron"
 	game.buildings[a].progress = 0
 	game.buildings[b].item = "copper"
 	game.buildings[b].progress = 0
 	game.teleporters.transfer()
-	check(game.buildings[a].item == "copper" and game.buildings[b].item == "iron", "Simultaneous bidirectional input does not deadlock")
+	check(game.buildings[a].item == "iron" and game.buildings[b].item == "copper", "Occupied output blocks transfer without swapping resources backward")
+	game.buildings[a].item = ""
+	game.teleporters.transfer()
+	check(game.buildings[a].item == "" and game.buildings[b].item == "copper", "Output never transfers cargo back to input")
+	game.begin_drag(b)
+	game.extend_drag(b + Vector2i.UP)
+	game.finish_drag()
+	check(game.output_target(b, game.buildings[b]) == b + Vector2i.UP, "Output targets only its chosen direction")
 	var snapshot: Array = game.saves.snapshot()
 	game.saves.restore_snapshot(snapshot,-1)
 	check(game.buildings[a].tunnel_pair == b and game.buildings[b].tunnel_pair == a, "Checkpoint restores pair links")
+	check(game.teleporters.is_output(b) and not game.teleporters.is_output(a) and game.buildings[b].dir == 3, "Checkpoint restores teleporter roles and output direction")
+	check(preload("res://scripts/structure_info.gd").description(game, "teleporter").contains("\n\nClick and drag on output node to change output direction."), "Alt description includes separated direction hint")
 	game.remove_building(a,false)
 	check(not game.buildings.has(a) and not game.buildings.has(b), "Deleting a node removes both")
 	game._add_building(a,"splitter",0)

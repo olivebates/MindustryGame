@@ -93,6 +93,10 @@ var discovered_resources: Dictionary = {}
 var debug_unlock_step := 0
 var saves: RefCounted
 var debug_keys: Dictionary = {}
+var developer_mode := false
+var developer_waves: RefCounted
+# Off-tree combat copies must never run presentation, tutorial or save effects.
+var combat_preview := false
 var debug_resource_capacity := false
 var enemy_info_counter := 0
 var pause_grid: Node2D
@@ -157,6 +161,7 @@ func _ready() -> void:
 	hud.set_script(load("res://scripts/hud.gd"))
 	hud.game = self
 	add_child(hud)
+	developer_waves = preload("res://scripts/developer_waves.gd").new(self)
 	capture_effect = preload("res://scripts/core_capture.gd").new()
 	capture_effect.game = self
 	add_child(capture_effect)
@@ -409,7 +414,7 @@ func refresh_belt_inputs(scope: Dictionary = {}) -> void:
 			if not buildings.has(neighbor): continue
 			var other: Dictionary = buildings[neighbor]
 			if other.kind == "belt" and output_target(neighbor, other) == cell: incoming.append(other.dir)
-			elif other.kind in ["drill", "splitter", "teleporter"]: extractor_dir = direction_for(cell - neighbor)
+			elif other.kind in ["drill", "splitter"] or (other.kind == "teleporter" and teleporters.is_output(neighbor) and output_target(neighbor, other) == cell): extractor_dir = direction_for(cell - neighbor)
 		if incoming.size() == 1: b.input_dir = incoming[0]
 		elif incoming.size() > 1: b.input_dir = b.dir
 		elif extractor_dir >= 0:
@@ -471,7 +476,7 @@ func place_building(cell: Vector2i, kind: String, direction: int, affinity: Stri
 	return true
 func remove_building(cell: Vector2i, refund: bool = true) -> void:
 	var anchor := anchor_at(cell)
-	if anchor == INVALID or buildings[anchor].kind == "core": return
+	if anchor == INVALID or (buildings[anchor].kind == "core" and not combat_preview): return
 	var removal_position := building_center(anchor)
 	var removed_turret: bool = is_turret(buildings[anchor].kind) and not buildings[anchor].get("pending", false) and anchor.distance_squared_to(current_core) <= core_build_radius * core_build_radius
 	var targets: Array[Vector2i] = [anchor]
@@ -496,14 +501,14 @@ func remove_building(cell: Vector2i, refund: bool = true) -> void:
 		buildings.erase(target)
 		building_centers.erase(target)
 		placement_counts[b.kind] = maxi(0, placement_counts.get(b.kind, 0) - 1)
-		tutorial.on_building_removed(target)
+		if not combat_preview: tutorial.on_building_removed(target)
 	for resource in inventory: inventory[resource] = mini(inventory[resource], material_capacity(resource))
 	if inspected in targets: inspected = INVALID
 	play_sound("demolish" if refund else "explosion", removal_position)
 	tutorial.guide_dirty = true
 	if not affected_belts.is_empty(): refresh_belt_inputs(affected_belts)
 	enemy_navigation.invalidate(self)
-	if removed_turret:
+	if removed_turret and not combat_preview:
 		var any_turrets := false
 		for other_cell in buildings:
 			if is_turret(buildings[other_cell].kind) and not buildings[other_cell].get("pending", false) and other_cell.distance_squared_to(current_core) <= core_build_radius * core_build_radius:
@@ -570,6 +575,8 @@ func grid_path(start: Vector2i, target: Vector2i) -> Array[Vector2i]:
 		result.append(cursor)
 	return result
 func begin_drag(cell: Vector2i) -> void:
+	teleporters.redirecting = INVALID
+	teleporters.cycle_on_release = false
 	pending_crossing.clear()
 	redirecting_belt = false
 	drag_initial_receiver = INVALID
@@ -583,6 +590,10 @@ func begin_drag(cell: Vector2i) -> void:
 	drag_placed.clear()
 	tunnel_pending = INVALID
 	drag_blocked = false
+	if active_tool == "build" and teleporters.is_output(anchor_at(cell)):
+		teleporters.redirecting = anchor_at(cell)
+		teleporters.cycle_on_release = true
+		return
 	if active_tool == "blueprint_select": return
 	if active_tool == "blueprint_stamp":
 		stamp_blueprint(cell)
@@ -620,6 +631,9 @@ func begin_drag(cell: Vector2i) -> void:
 		var target := output_target(cell, buildings[cell])
 		if buildings.has(target) and buildings[target].kind == "belt" and output_target(target, buildings[target]) != cell: drag_initial_receiver = target
 func extend_drag(target: Vector2i, straight: bool = false) -> void:
+	if teleporters.redirecting != INVALID:
+		teleporters.redirect(target)
+		return
 	if redirecting_belt:
 		if target != drag_start: redirect_belt(drag_start, direction_for(target - drag_start))
 		return
@@ -698,6 +712,9 @@ func _drag_belt_step(previous: Vector2i, cell: Vector2i) -> void:
 		drag_initial_receiver = INVALID
 	if not drag_placed.is_empty(): refresh_belt_inputs(drag_placed)
 func finish_drag() -> void:
+	if dragging and teleporters.cycle_on_release: teleporters.cycle_output(teleporters.redirecting)
+	teleporters.cycle_on_release = false
+	teleporters.redirecting = INVALID
 	pending_crossing.clear()
 	redirecting_belt = false
 	if dragging and middle_blueprint_drag and blueprint_end == drag_start and anchor_at(drag_start) != INVALID:
@@ -1029,6 +1046,7 @@ func cancel_wave_warp() -> void:
 	wave_warp_active = false
 	wave_warp_elapsed = 0.0
 func _process(delta: float) -> void:
+	if developer_mode and developer_waves != null: developer_waves.advance()
 	advance_final_wave_completion(delta)
 	activate_pending_buildings()
 	update_enemy_visual_offsets(delta)
@@ -1119,6 +1137,7 @@ func simulate(dt: float) -> void:
 		particles[i].pos += particles[i].velocity * dt
 		if particles[i].life <= 0: particles.remove_at(i)
 func output_target(cell: Vector2i, b: Dictionary) -> Vector2i:
+	if b.kind == "teleporter": return cell + DIRS[b.dir] if teleporters.is_output(cell) else INVALID
 	if b.kind == "refinery":
 		var ports := preload("res://scripts/pink_production.gd").ports(self, cell)
 		return ports[b.route_dir] if b.route_dir >= 0 and b.route_dir < ports.size() else INVALID
@@ -1133,7 +1152,8 @@ func can_receive(target: Vector2i, item: String, source: Vector2i = INVALID) -> 
 	var b: Dictionary = buildings[anchor]
 	if b.get("pending", false): return false
 	if b.kind == "core": return inventory.has(item) and inventory[item] < material_capacity(item)
-	if b.kind in ["belt", "splitter", "teleporter"]: return b.item == ""
+	if b.kind == "teleporter": return not teleporters.is_output(anchor) and b.item == ""
+	if b.kind in ["belt", "splitter"]: return b.item == ""
 	if is_turret(b.kind):
 		if Content.BOOSTERS.has(item): return b.booster_count < 10 and (b.booster_type == "" or b.booster_type == item)
 		return not BUILDINGS[b.kind].get("ammo_free", false) and BUILDINGS[b.kind].ammo == item and b.ammo < turret_ammo_capacity(b.kind)
@@ -1148,8 +1168,8 @@ func _update_items(dt: float) -> void:
 		if b.get("pending", false): continue
 		if b.item == "": continue
 		if b.kind == "refinery": preload("res://scripts/pink_production.gd").route(self, cell, b)
-		if b.kind == "teleporter" and b.progress != 1: continue
-		if b.kind in ["splitter", "drill", "teleporter"]: update_splitter_route(cell, b)
+		if b.kind == "teleporter" and not teleporters.is_output(cell): continue
+		if b.kind in ["splitter", "drill"]: update_splitter_route(cell, b)
 		var target := output_target(cell, b)
 		if target == INVALID:
 			b.travel = 0.0
@@ -1175,7 +1195,7 @@ func _move_items() -> void:
 			var target := output_target(cell, b)
 			var anchor := anchor_at(target)
 			if reserved.has(anchor): continue
-			if can_receive(target, b.item, cell) or (anchor != cell and departing.has(anchor)):
+			if can_receive(target, b.item, cell) or (anchor != cell and departing.has(anchor) and not (buildings[anchor].kind == "teleporter" and teleporters.is_output(anchor))):
 				departing[cell] = true
 				reserved[anchor] = true
 				transfers.append({"from": cell, "to": anchor, "item": b.item})
@@ -1454,9 +1474,9 @@ func _damage_building(cell: Vector2i, amount: float) -> void:
 	b.flash = 1.0
 	if b.kind == "core" and anchor == current_core: core_health = maxf(0, b.hp)
 	if b.hp <= 0:
-		if b.kind == "drill": tutorial.on_extractor_destroyed()
+		if b.kind == "drill" and not combat_preview: tutorial.on_extractor_destroyed()
 		_sparks(building_center(anchor), COPPER, 18)
-		if b.kind == "core":
+		if b.kind == "core" and not combat_preview:
 			lost = true
 			play_sound("defeat")
 			if saves.entries.is_empty() and not saves.initial_checkpoint.is_empty(): saves.capture(saves.initial_checkpoint)
@@ -1464,6 +1484,7 @@ func _damage_building(cell: Vector2i, amount: float) -> void:
 		else:
 			remove_building(anchor, false)
 func _sparks(pos: Vector2, color: Color, count: int) -> void:
+	if combat_preview: return
 	for i in count:
 		particles.append({"pos": pos, "velocity": Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(20, 100), "life": rng.randf_range(0.15, 0.5), "color": color})
 
@@ -1526,7 +1547,7 @@ func _draw_cursor() -> void:
 		for config in blueprint:
 			var size_px: float = footprint_size(config.kind) * TILE
 			var rect := Rect2(Vector2((hover_cell + config.offset) * TILE), Vector2.ONE * size_px)
-			var texture: Texture2D = textures[config.kind if config.tunnel_role == "" else "tunnel_" + config.tunnel_role]
+			var texture: Texture2D = textures["tunnel_" + config.tunnel_role if config.kind == "belt" and config.tunnel_role != "" else config.kind]
 			draw_set_transform(rect.get_center(), config.dir * PI / 2.0 if config.kind == "belt" else 0.0)
 			draw_texture_rect(texture, Rect2(-rect.size / 2, rect.size), false, tint)
 			draw_set_transform(Vector2.ZERO)
@@ -1538,7 +1559,7 @@ func _draw_cursor() -> void:
 		var b: Dictionary = buildings[anchor]
 		var rect := Rect2(Vector2(anchor * TILE), Vector2.ONE * footprint_size(b.kind) * TILE)
 		draw_rect(rect, Color(TEAL, 0.7), false, line_width())
-		if b.tunnel_pair != INVALID and buildings.has(b.tunnel_pair):
+		if b.kind != "teleporter" and b.tunnel_pair != INVALID and buildings.has(b.tunnel_pair):
 			var start := building_center(anchor)
 			var end := building_center(b.tunnel_pair)
 			var length := start.distance_to(end)
@@ -1598,7 +1619,7 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 	if b.kind == "core" and cell != current_core: texture = textures.core_inactive
 	var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
 	var flip := Vector2.ONE
-	if b.tunnel_role != "": texture = textures["tunnel_" + b.tunnel_role]
+	if b.kind == "belt" and b.tunnel_role != "": texture = textures["tunnel_" + b.tunnel_role]
 	elif b.kind == "belt" and b.input_dir != b.dir and (int(b.dir) - int(b.input_dir) + 4) % 2 == 1:
 		texture = textures.belt_corner if researched.has("conveyor_speed") else textures.belt_corner_dark
 		angle = b.input_dir * PI / 2.0
@@ -2008,6 +2029,9 @@ func _reveal_map() -> void:
 			var visible := false
 			for base in cores:
 				if point.distance_to(cell_center(base)) <= TILE * 20: visible = true
+			for index in range(1, cores.size()):
+				var closest := Geometry2D.get_closest_point_to_segment(point, cell_center(cores[index - 1]), cell_center(cores[index]))
+				if point.distance_to(closest) <= TILE * 20: visible = true
 			if not visible and tutorial.start_controls_available():
 				for spawner in active_spawners:
 					var closest := Geometry2D.get_closest_point_to_segment(point, cell_center(current_core), spawner.position)
@@ -2068,9 +2092,17 @@ func handle_debug_shortcut(event: InputEvent) -> bool:
 	if not (event is InputEventKey): return false
 	if event.pressed: debug_keys[event.keycode] = true
 	else: debug_keys.erase(event.keycode)
-	if not event.pressed or event.echo or not event.shift_pressed: return false
+	if not event.pressed or event.echo: return false
 	var platform_features := platform_debug_features()
 	if not debug_features_allowed(platform_features): return false
+	if developer_mode and event.keycode in [KEY_G, KEY_H] and not event.ctrl_pressed and not event.alt_pressed and not event.shift_pressed:
+		developer_waves.start(event.keycode == KEY_G)
+		return true
+	if not event.shift_pressed: return false
+	if event.keycode in [KEY_SHIFT, KEY_Z, KEY_B] and debug_keys.has(KEY_Z) and debug_keys.has(KEY_B):
+		developer_mode = true
+		hud.refresh_developer_waves()
+		return true
 	if event.keycode in [KEY_Z, KEY_L] and debug_keys.has(KEY_Z) and debug_keys.has(KEY_L):
 		base_material_capacity = 10000
 		debug_resource_capacity = true
@@ -2225,7 +2257,7 @@ func draw_pending_building(cell: Vector2i, building: Dictionary) -> void:
 	var center := building_center(cell).round()
 	var texture: Texture2D = textures.solar_base if building.kind == "solar" else textures[building.kind]
 	if building.kind == "belt" and not researched.has("conveyor_speed"): texture = textures.belt_dark
-	if building.get("tunnel_role", "") != "": texture = textures["tunnel_" + building.tunnel_role]
+	if building.kind == "belt" and building.get("tunnel_role", "") != "": texture = textures["tunnel_" + building.tunnel_role]
 	draw_set_transform(center, building.dir * PI / 2.0 if building.kind == "belt" else 0.0)
 	preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension))
 	draw_set_transform(Vector2.ZERO)

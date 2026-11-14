@@ -1,4 +1,4 @@
-﻿# Emberworks - Frontier
+# Emberworks - Frontier
 
 A native Godot factory-defense prototype with original SVG graphics, mining, conveyors, research, colored weapons, and an expanding frontier.
 
@@ -18,8 +18,14 @@ Collecting the first 3 scrap after pausing reveals the glowing Tech tree button.
 
 **Shift+P** skips the tutorial and unlocks the three starters. Press it again to unlock all research. This grants no resources and does not start the timer. **Shift+Z+L** fills every resource to 10,000 and sets capacity to exactly 10,000. All debug shortcuts are disabled in HTML5/WebAssembly builds.
 
+**Shift+Z+B** enters developer mode and reveals wave credits to the right of the resource inventory. Press **H** to measure the upcoming wave against a snapshot of the current factory, including turret health, ammo, research, shields, healing and logistics. Each rendered frame runs one complete battle with fixed simulation steps. Trials add the most expensive available enemy until all active turrets within the current core's build radius are destroyed, discard the lethal addition, then repeat with each cheaper enemy while retaining the accepted army. Enemy availability, colors and spawn locations follow the upcoming wave's active gates; their configured credit budgets do not constrain the search. Core destruction does not end these turret-capacity trials. The live game and saves remain untouched, and the search also works while paused.
+
+Press **G** to run the same search with a trial rejected as soon as any active local turret is destroyed. Completed searches appear as **Round x: y-z**, where y is the G credit amount and z is the H credit amount; an unrun amount is zero. Repeating G or H for the same core and wave updates that entry, and later waves add entries to the scrollable list. Results last for the current session. No active local turrets produces zero credits. A battle lasting more than one simulated minute from its start counts as all turrets destroyed: the latest enemy is discarded and the search continues with the next cheaper tier. The 1,000-enemy search limit produces an explicit inconclusive status instead of a credit result.
+
 Open **scenes/sector.tscn** in Godot to paint **RockWalls** and **OreDeposits**, which are separate TileMapLayers. Ore tiles provide copper, iron, or verdite through their resource metadata. Ground is also a saved TileMapLayer. Move **CoreSpawn** to choose the initial core position. Keep tiles within the 112 by 80 grid. The main scene instances this editable sector; playing never generates or overwrites terrain. The one-time authoring helper refuses to overwrite an existing sector.
 ## Factory and placement
+
+Teleporters are directional pairs: the first node receives items and the second outputs them to one adjacent tile. Drag while placing the second node, or click and drag an existing output, to choose its direction even with another building selected. A black-outlined arrow marks the output direction; hovering either node shows arrows along the input-to-output connection. Occupied outputs hold up the input until space is available. Pair roles and output directions survive checkpoints and blueprints.
 
 Click **Structures**, or **Infrastructure / Defence** after researching Barriers, at the bottom to open a compact, animated tray above it. Locked designs are hidden from build menus; the original category buttons remain available in code for later use. Unaffordable buildings have a translucent black overlay and red prices. Attempts to construct them show floating red text naming the missing resources. **Tech tree** is on the left; clearing and demolition use keyboard shortcuts without toolbar buttons. Toolbar buttons use icons, with Alt-hover mouse popups showing their names, one-sentence descriptions, and shortcuts. Start is the only text button in the bottom toolbar.
 

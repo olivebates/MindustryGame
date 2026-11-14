@@ -1,6 +1,6 @@
 extends RefCounted
 const DESCRIPTIONS := {
-	"teleporter": "Teleports incoming resources to its paired node and distributes them to nearby buildings.",
+	"teleporter": "Teleports resources from the first input node to the second output node.\n\nClick and drag on output node to change output direction.",
 	"core": "Defend at all costs.",
 	"belt": "Moves one material at a time toward its next destination.",
 	"drill": "Extracts ore and shares it equally among adjacent outgoing belts.",
@@ -66,7 +66,7 @@ static func stats(game: Node2D, kind: String, building: Dictionary = {}) -> Stri
 	if not building.is_empty():
 		if kind == "forge": lines.append("Inputs: %s copper / %s iron" % [number(building.buffer.copper), number(building.buffer.iron)])
 		if building.item != "" and kind != "refinery": lines.append("Cargo: " + building.item.capitalize())
-		if building.tunnel_role != "": lines.append("Tunnel: " + building.tunnel_role.capitalize())
+		if building.tunnel_role != "": lines.append(("Teleporter: " if kind == "teleporter" else "Tunnel: ") + building.tunnel_role.capitalize())
 	return "\n".join(lines)
 
 static func number(value: float) -> String:

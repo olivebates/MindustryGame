@@ -79,7 +79,7 @@ func _draw() -> void:
 			continue
 		var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
 		var flip := Vector2.ONE
-		if b.tunnel_role != "": texture = textures["tunnel_" + b.tunnel_role]
+		if b.kind == "belt" and b.tunnel_role != "": texture = textures["tunnel_" + b.tunnel_role]
 		elif b.kind == "belt" and (int(b.dir) - int(b.input_dir) + 4) % 2 == 1:
 			texture = textures.belt_corner if conveyor_upgraded else textures.belt_corner_dark
 			angle = b.input_dir * PI / 2.0
