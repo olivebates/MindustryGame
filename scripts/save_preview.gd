@@ -73,6 +73,8 @@ func _draw() -> void:
 		var center := Vector2(cell * 32) + Vector2.ONE * 16 * footprint
 		var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not conveyor_upgraded else textures[b.kind]
 		if b.kind == "solar": texture = textures.solar_base
+		if b.kind == "teleporter" and (b.tunnel_role == "exit" or (b.tunnel_role == "" and buildings.has(b.tunnel_pair) and buildings.keys().find(cell) > buildings.keys().find(b.tunnel_pair))):
+			texture = textures["teleporter_output_%d" % int(b.dir)]
 		if b.kind == "core" and cell != core: texture = textures.core_inactive
 		if b.get("pending", false):
 			preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(center - Vector2.ONE * dimension / 2, Vector2.ONE * dimension))

@@ -168,4 +168,7 @@ func _draw() -> void:
 		for ring in 3:
 			draw_arc(origin, radius + ring * stroke * 2, 0, TAU, 128, Color(1, 0.77, 0.36, (1 - pulse) * (0.6 / (ring + 1))), stroke)
 		draw_circle(origin, 28 + pulse * 24, Color(1, 0.8, 0.45, (1 - pulse) * 0.18))
+	var progress := clampf((time - REVEAL_DELAY) / REVEAL_DURATION, 0, 1)
+	if progress > 0 and progress < 1:
+		draw_arc(origin, maxf(1, reveal_radius), 0, TAU, 192, Color(0.45, 0.94, 0.85, sin(progress * PI) * 0.7), stroke)
 

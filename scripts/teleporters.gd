@@ -20,6 +20,12 @@ func cycle_output(cell: Vector2i) -> void:
 	if not is_output(cell): return
 	var current: int = game.buildings[cell].dir
 	var outputs: Array[int] = game.splitter_outputs(cell)
+	outputs = outputs.filter(func(direction): return not is_output(game.anchor_at(cell + game.DIRS[direction])))
+	if outputs.size() <= 1:
+		game.buildings[cell].dir = (current + 1) % 4
+		game.buildings[cell].route_dir = game.buildings[cell].dir
+		game.refresh_belt_inputs()
+		return
 	for offset in range(1, 5):
 		var direction := (current + offset) % 4
 		if not outputs.has(direction): continue
@@ -99,10 +105,6 @@ func transfer() -> void:
 		b.item = ""
 		b.travel = 0.0
 func draw_links() -> void:
-	for cell in game.buildings:
-		if is_output(cell):
-			var direction: Vector2 = Vector2(game.DIRS[game.buildings[cell].dir])
-			draw_arrow(game.building_center(cell), direction, Color.WHITE, 6.0)
 	if game.buildings.has(first):
 		draw_connection(game.cell_center(first), game.get_global_mouse_position())
 	var node: Dictionary = game.building_at(game.hover_cell)
@@ -115,13 +117,16 @@ func draw_links() -> void:
 func draw_connection(start: Vector2, end: Vector2) -> void:
 	game.draw_line(start, end, Color(1,1,1,0.35), game.line_width())
 	var direction := (end - start).normalized()
+	var scale: float = maxf(0.001, game.get_screen_transform().x.length())
+	var arrow_size := maxf(6.0, 8.0 / scale)
 	for index in maxi(1, floori(start.distance_to(end) / 48)):
 		var distance := (index + 0.5) * 48
-		if distance < start.distance_to(end): draw_arrow(start + direction * distance, direction, Color(1,1,1,0.8), 5.0)
+		if distance < start.distance_to(end): draw_arrow(start + direction * distance, direction, Color(1,1,1,0.8), arrow_size)
 
 func draw_arrow(center: Vector2, direction: Vector2, color: Color, size: float) -> void:
 	var side := direction.orthogonal()
 	var points := PackedVector2Array([center + direction * size, center - direction * size * 0.6 + side * size * 0.65, center - direction * size * 0.6 - side * size * 0.65])
+	var outer := size + 1.0
+	var outline := PackedVector2Array([center + direction * outer, center - direction * outer * 0.6 + side * outer * 0.65, center - direction * outer * 0.6 - side * outer * 0.65])
+	game.draw_colored_polygon(outline, Color.BLACK)
 	game.draw_colored_polygon(points, color)
-	points.append(points[0])
-	game.draw_polyline(points, Color.BLACK, game.line_width() * 2)

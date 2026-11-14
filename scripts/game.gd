@@ -183,6 +183,9 @@ func sprite_rasters(resolution: int) -> Dictionary:
 				result[kind + suffix + "_" + color] = preload("res://scripts/enemy_art.gd").composite(result[kind + suffix], marking, TEAM_COLORS[color])
 		for color in TEAM_COLORS:
 			result[kind + "_" + color] = preload("res://scripts/enemy_art.gd").assemble(result[kind + "_body_" + color],result[kind + "_gun_" + color])
+	for direction in 4:
+		var key := "teleporter_output_%d" % direction
+		result[key] = PixelArt.texture(load("res://assets/buildings/%s.svg" % key), Vector2i.ONE * resolution)
 	for part in ["solar_base", "solar_gun"]: result[part] = PixelArt.texture(load("res://assets/buildings/%s.svg" % part), Vector2i.ONE * resolution)
 	for mask in [7, 11, 13, 14, 15]:
 		for suffix in ["", "_dark"]:
@@ -1548,6 +1551,7 @@ func _draw_cursor() -> void:
 			var size_px: float = footprint_size(config.kind) * TILE
 			var rect := Rect2(Vector2((hover_cell + config.offset) * TILE), Vector2.ONE * size_px)
 			var texture: Texture2D = textures["tunnel_" + config.tunnel_role if config.kind == "belt" and config.tunnel_role != "" else config.kind]
+			if config.kind == "teleporter" and config.tunnel_role == "exit": texture = textures["teleporter_output_%d" % int(config.dir)]
 			draw_set_transform(rect.get_center(), config.dir * PI / 2.0 if config.kind == "belt" else 0.0)
 			draw_texture_rect(texture, Rect2(-rect.size / 2, rect.size), false, tint)
 			draw_set_transform(Vector2.ZERO)
@@ -1616,6 +1620,7 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 	var rect := Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension)
 	var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not researched.has("conveyor_speed") else textures[b.kind]
 	if b.kind == "solar": texture = textures.solar_base
+	if b.kind == "teleporter" and teleporters.is_output(cell): texture = textures["teleporter_output_%d" % int(b.dir)]
 	if b.kind == "core" and cell != current_core: texture = textures.core_inactive
 	var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
 	var flip := Vector2.ONE
@@ -2256,6 +2261,7 @@ func draw_pending_building(cell: Vector2i, building: Dictionary) -> void:
 	var dimension: float = TILE * footprint_size(building.kind)
 	var center := building_center(cell).round()
 	var texture: Texture2D = textures.solar_base if building.kind == "solar" else textures[building.kind]
+	if building.kind == "teleporter" and teleporters.is_output(cell): texture = textures["teleporter_output_%d" % int(building.dir)]
 	if building.kind == "belt" and not researched.has("conveyor_speed"): texture = textures.belt_dark
 	if building.kind == "belt" and building.get("tunnel_role", "") != "": texture = textures["tunnel_" + building.tunnel_role]
 	draw_set_transform(center, building.dir * PI / 2.0 if building.kind == "belt" else 0.0)
