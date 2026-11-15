@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48">
+<path d="M4 30L10 22L16 25L20 7L30 2L37 12L36 25L42 20L47 27L42 41L29 46L12 44L2 38Z" fill="#142c20"/>
+<path d="M18 31L22 9L30 5L34 13L31 35L25 40Z" fill="#83c92e"/>
+<path d="M22 9L30 5L27 20L18 31Z" fill="#e3f994"/>
+<path d="M30 5L34 13L31 35L27 20Z" fill="#4b9a2b"/>
+<path d="M18 31L27 20L25 40Z" fill="#b9ed52"/>
+<path d="M5 31L11 25L18 31L18 40L12 41L5 36Z" fill="#65b631"/>
+<path d="M5 31L11 25L13 33L5 36Z" fill="#d6f58a"/>
+<path d="M13 33L18 31L18 40L12 41Z" fill="#34762b"/>
+<path d="M31 31L41 23L44 28L40 39L31 42Z" fill="#85cf35"/>
+<path d="M31 31L41 23L38 32L31 36Z" fill="#e3f994"/>
+<path d="M38 32L44 28L40 39L31 42Z" fill="#4b9a2b"/>
+<path d="M18 37L24 32L30 37L27 44L20 44Z" fill="#b9ed52"/>
+<path d="M18 37L24 32L25 38Z" fill="#f1ffd0"/>
+<path d="M25 38L30 37L27 44L20 44Z" fill="#65b631"/>
+<path d="M7 39H10V42H7ZM36 42H40V44H36Z" fill="#83c92e"/>
+</svg>

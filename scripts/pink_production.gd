@@ -30,7 +30,7 @@ static func advance(game: Node2D, dt: float) -> void:
 			preload("res://scripts/pink_support.gd").burn_silo(game, building, dt)
 		if building.kind == "refinery":
 			if building.buffer.copper < 1 or building.buffer.iron < 1 or building.item != "": continue
-			building.progress = minf(10, building.progress + dt)
+			building.progress = minf(10, building.progress + dt * preload("res://scripts/nuclear.gd").production_speed(building))
 			if building.progress >= 9.99999:
 				building.buffer.copper -= 1
 				building.buffer.iron -= 1

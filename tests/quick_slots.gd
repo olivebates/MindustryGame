@@ -26,7 +26,7 @@ func run() -> void:
 	check(game.saves.entries.size() == history_size, "Quick saves do not pollute wave history")
 	for slot in range(1, 10):
 		check(game.handle_savestate_shortcut(number_key(slot, false, true)), "Control-number loads slot")
-		check(game.inventory.copper == slot * 10 and game.wave_timer == slot * 3 and game.enemies.size() == 1 and game.enemies[0].pos.x == 400 + slot and game.wave_in_progress and game.paused, "Slot restores mid-wave resources, timer and enemies, paused")
+		check(game.inventory.copper == slot * 10 and game.wave_timer == game.initial_wave_delay and game.enemies.is_empty() and game.spawn_queue.is_empty() and not game.wave_in_progress and game.paused, "Slot restores resources and rebuilds a fresh wave, paused")
 	game.inventory.copper = 777
 	check(game.saves.save_slot(1), "An existing slot can be overwritten")
 	game.inventory.copper = 1

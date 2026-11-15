@@ -30,7 +30,6 @@ func detect_supply_materials() -> Array[String]:
 		var material: String = b.get("item", "")
 		if material != "" and not result.has(material): result.append(material)
 		if b.kind == "refinery" and not result.has("pink"): result.append("pink")
-		if b.kind == "forge" and not result.has("alloy"): result.append("alloy")
 		if b.kind == "drill":
 			material = game.ores.get(anchor, "copper")
 			if not result.has(material): result.append(material)
@@ -39,14 +38,15 @@ func detect_supply_materials() -> Array[String]:
 	return result
 func needs_material(b: Dictionary, material: String) -> bool:
 	if b.get("pending", false): return false
+	var data: Dictionary = game.BUILDINGS.get(b.kind, {})
+	if data.has("inputs"): return material in data.inputs and b.buffer.get(material, 0) < (data.get("charge_cost", 1) if material == "verdite" else 1)
 	if game.is_turret(b.kind):
 		if game.Content.BOOSTERS.has(material):
 			return b.get("booster_count", 0) == 0
-		var data: Dictionary = game.BUILDINGS[b.kind]
 		return not data.get("ammo_free", false) and data.get("ammo", "") == material and b.ammo == 0
 	var required: Array = []
 	match b.kind:
-		"refinery", "forge": required = ["copper", "iron"]
+		"refinery": required = ["copper", "iron"]
 		"healer", "copper_store", "iron_store": required = ["pink"]
 		"core": return game.inventory.has(material) and game.inventory[material] < game.material_capacity(material)
 	return material in required and b.get("buffer", {}).get(material, 0) == 0

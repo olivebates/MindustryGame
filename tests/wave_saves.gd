@@ -79,19 +79,12 @@ func run() -> void:
 	check(game.tutorial.central_message() == "" and game.tutorial.paused_once, "First real pause dismisses the reminder")
 	game.toggle_pause()
 	game.research("barriers", true)
-	game.research("solar_green", true)
-	check(game.unlocked_colors("solar") == ["red", "green"] and game.unlocked_colors("turret").is_empty(), "Color unlocks apply only to their own turret")
+	game.research("turret_color", true)
+	check(game.unlocked_colors("solar").size() == 3 and game.unlocked_colors("turret").size() == 3, "Turret Color unlocks every color for every turret")
+	game.hud.build_filters.select_color("green")
 	game.select_building("solar")
 	game.begin_drag(Vector2i(32, 22))
-	check(game.radial_pending == Vector2i(32, 22) and is_instance_valid(game.hud.radial), "Multiple unlocked colors use the radial menu")
-	var picker = game.hud.radial
-	check(picker.selected_at(Vector2(0, -900)) == "red" and picker.selected_at(Vector2(900, 520)) == "green", "Radial selection follows direction at unlimited distance")
-	check(picker.selected_at(Vector2(-900, 520)) == "" and picker.selected_at(Vector2(0, -15)) == "", "Locked slices and inner dead zone cannot select a color")
-	var all_picker = load("res://scripts/affinity_picker.gd").new()
-	var counts := {"red": 0, "green": 0, "blue": 0}
-	for angle in 360: counts[all_picker.selected_at(Vector2.from_angle(deg_to_rad(angle + 0.25)) * 500)] += 1
-	check(counts.red == 120 and counts.green == 120 and counts.blue == 120, "Radial slices each occupy exactly 120 degrees")
-	all_picker.free()
+	check(game.radial_pending == game.INVALID and game.building_at(Vector2i(32, 22)).get("color", "") == "green", "Turrets place directly using the selected toolbar color")
 	game.cancel_build_selection()
 	game.finish_drag()
 	game._add_building(Vector2i(25, 20), "copper_store", 0)
@@ -160,13 +153,13 @@ func run() -> void:
 	history.read_index()
 	check(history.entries.size() == 3 and history.load_snapshot(0) == original, "Checkpoint history and exact state survive reopening disk files")
 	check(game.saves.restore(0) and game.paused and game.wave == 1, "Restoring an older checkpoint pauses immediately")
-	check(game.saves.snapshot()[1] == original[1] and game.saves.snapshot()[2] == original[2] and game.saves.snapshot()[4] == original[4] and game.saves.snapshot()[8] == original[8], "Restore reproduces inventory, buildings, research, tutorial, gates, cargo, clocks and RNG exactly")
+	check(game.saves.snapshot()[1] == original[1] and game.saves.snapshot()[2] == original[2] and game.saves.snapshot()[4] == original[4] and game.saves.snapshot()[8] == original[8], "Restore reproduces durable state and deterministically rebuilds derived runtime state")
 	game.tutorial.info_hover_time = 2.0
 	game.tutorial.inspected_things = {"core": true, "belt": true, "enemy": true}
 	game.tutorial.pause_exit_completed = true
 	game.tutorial.category_visits = {"Infrastructure": true, "Defence": true}
 	game.tutorial.speed_toggled = true
-	check(game.saves.restore(0) and game.tutorial.info_hover_time == 2.0 and game.tutorial.pause_exit_completed and game.tutorial.speed_toggled and game.tutorial.inspected_things.size() == 3, "Rollback preserves lessons already learned after an older checkpoint")
+	check(game.saves.restore(0) and game.tutorial.info_hover_time == 0.0 and game.tutorial.pause_exit_completed and not game.tutorial.speed_toggled and game.tutorial.inspected_things.is_empty(), "Rollback derives tutorial progress instead of retaining unrelated lesson history")
 	check(game.saves.entries.size() == 3 and game.saves.pending_branch, "Restoring retains future saves while paused")
 	game.hud.save_browser.show_browser()
 	check(not game.hud.save_browser.strip.visible and game.hud.saves_button.visible and is_instance_valid(game.hud.modal), "Save browser replaces the persistent timeline")

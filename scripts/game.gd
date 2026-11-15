@@ -2,6 +2,7 @@ extends Node2D
 const Content = preload("res://scripts/content.gd")
 const ConveyorMotion = preload("res://scripts/conveyor_motion.gd")
 const PixelArt = preload("res://scripts/pixel_art.gd")
+const Nuclear = preload("res://scripts/nuclear.gd")
 const BUILDINGS = Content.BUILDINGS
 var TECH: Dictionary = Content.TECH.duplicate(true)
 const TILE := 32
@@ -19,12 +20,12 @@ const STRONG_AGAINST := {"red": "green", "green": "blue", "blue": "red"}
 const COPPER := Color("dba36e")
 const TEAL := Color("edb183")
 const RED := Color("ed7968")
-const RESOURCE_COLORS := {"copper": Color("dba36e"), "iron": Color("b8ced6"), "verdite": Color("8ed878"), "alloy": Color("bb9be8"), "pink": Color("f48bc7")}
+const RESOURCE_COLORS := {"copper": Color("dba36e"), "iron": Color("b8ced6"), "verdite": Color("b9ef62"), "pink": Color("f48bc7"), "coolant": Color("70dbe9")}
 var buildings: Dictionary = {}
 var occupied: Dictionary = {}
 var ores: Dictionary = {}
 var rocks: Dictionary = {}
-var inventory := {"copper": 0, "iron": 0, "verdite": 0, "alloy": 0, "pink": 0}
+var inventory := {"copper": 0, "iron": 0, "verdite": 0, "pink": 0}
 var researched: Dictionary = {}
 var enemies: Array[Dictionary] = []
 var shots: Array[Dictionary] = []
@@ -43,6 +44,7 @@ var lost := false
 var won := false
 var victory_shown := false
 var selected := ""
+var build_color := "red"
 var active_tool := "build"
 var build_direction := 0
 var hover_cell := INVALID
@@ -93,6 +95,7 @@ var discovered_resources: Dictionary = {}
 var debug_unlock_step := 0
 var saves: RefCounted
 var debug_keys: Dictionary = {}
+var debug_tech_reveal := false
 var developer_mode := false
 var developer_waves: RefCounted
 # Off-tree combat copies must never run presentation, tutorial or save effects.
@@ -171,7 +174,7 @@ func _ready() -> void:
 func sprite_rasters(resolution: int) -> Dictionary:
 	if sprite_raster_sets.has(resolution): return sprite_raster_sets[resolution]
 	var result: Dictionary = {}
-	for kind in ["belt", "splitter", "drill", "solar", "turret", "wall", "core", "barrel", "repeater", "cannon", "healer", "forge", "tunnel_entry", "tunnel_exit", "belt_corner", "belt_dark", "belt_corner_dark", "core_inactive", "wall_iron", "refinery", "teleporter"]:
+	for kind in ["belt", "splitter", "drill", "solar", "turret", "wall", "core", "barrel", "healer", "tunnel_entry", "tunnel_exit", "belt_corner", "belt_dark", "belt_corner_dark", "core_inactive", "wall_iron", "refinery", "teleporter"]:
 		var size: int = roundi(44.0 * resolution / TILE) if kind in ["core", "core_inactive"] else resolution * (BUILDINGS[kind].size if BUILDINGS.has(kind) else 1)
 		result[kind] = PixelArt.texture(load("res://assets/buildings/%s.svg" % kind), Vector2i.ONE * size)
 	for kind in Content.ENEMY_TYPES:
@@ -186,12 +189,17 @@ func sprite_rasters(resolution: int) -> Dictionary:
 	for direction in 4:
 		var key := "teleporter_output_%d" % direction
 		result[key] = PixelArt.texture(load("res://assets/buildings/%s.svg" % key), Vector2i.ONE * resolution)
+	for kind in Content.NUCLEAR_KINDS:
+		result[kind] = PixelArt.texture(load("res://assets/buildings/%s.svg" % kind), Vector2i.ONE * resolution * BUILDINGS[kind].size)
 	for part in ["solar_base", "solar_gun"]: result[part] = PixelArt.texture(load("res://assets/buildings/%s.svg" % part), Vector2i.ONE * resolution)
 	for mask in [7, 11, 13, 14, 15]:
 		for suffix in ["", "_dark"]:
 			var key := "belt_junction_%d%s" % [mask, suffix]
 			result[key] = PixelArt.texture(load("res://assets/buildings/%s.svg" % key), Vector2i.ONE * resolution)
 	for kind in Content.RESOURCES: result[kind + "_item"] = PixelArt.texture(load("res://assets/items/%s.svg" % kind), Vector2i.ONE * resolution)
+	result.verdite_item = PixelArt.texture(load("res://assets/items/plutonium.svg"), Vector2i.ONE * resolution)
+	result.coolant_item = PixelArt.texture(load("res://assets/items/coolant.svg"), Vector2i.ONE * resolution)
+	result.turret_color = PixelArt.texture(load("res://assets/ui/turret_color.svg"), Vector2i.ONE * resolution)
 	result.speed3 = PixelArt.texture(load("res://assets/ui/speed3.svg"), Vector2i.ONE * resolution)
 	for value in [5, 20, 50, 200, 1000]: result["scrap_%d_item" % value] = PixelArt.texture(load("res://assets/items/scrap_%d.svg" % value), Vector2i.ONE * resolution)
 	for kind in BUILDINGS:
@@ -251,7 +259,7 @@ func building_at(cell: Vector2i) -> Dictionary:
 func in_bounds(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.y >= 0 and cell.x < WIDTH and cell.y < HEIGHT
 func is_turret(kind: String) -> bool:
-	return kind in ["solar", "turret", "repeater", "cannon"]
+	return kind in ["solar", "turret"] or BUILDINGS.get(kind, {}).get("nuclear_turret", false)
 func wave_active() -> bool:
 	return spawn_remaining > 0 or not enemies.is_empty()
 func wave_color(number: int) -> String:
@@ -271,7 +279,7 @@ func affordable(cost: Dictionary) -> bool:
 func missing_resources(cost: Dictionary) -> Array[String]:
 	var result: Array[String] = []
 	for resource in Content.RESOURCES:
-		if inventory[resource] < cost.get(resource, 0): result.append("Repair alloy" if resource == "alloy" else resource.capitalize())
+		if inventory[resource] < cost.get(resource, 0): result.append(resource.capitalize())
 	return result
 func report_shortage(cost: Dictionary, world_cell: Vector2i = INVALID) -> void:
 	var missing := missing_resources(cost)
@@ -290,10 +298,12 @@ func research(id: String, free: bool = false) -> bool:
 	if not free and not tech_core_unlocked(id): return false
 	var data: Dictionary = TECH[id]
 	if not free and data.parent != "" and not researched.has(data.parent): return false
+	if not free:
+		for requirement in data.get("requires", []):
+			if not researched.has(requirement): return false
 	if not free and not affordable(data.cost): return false
 	if not free: pay(data.cost)
 	researched[id] = true
-	if id == "weapons": researched.turret_red = true
 	if id == "solar_health":
 		for building in buildings.values():
 			if building.kind == "solar":
@@ -302,12 +312,6 @@ func research(id: String, free: bool = false) -> bool:
 	if id == "slugger_shield":
 		for building in buildings.values():
 			if building.kind == "turret": building.shield = true
-	if id == "armor":
-		for b in buildings.values():
-			var extra: float = b.max_hp * 0.25
-			b.max_hp += extra
-			b.hp += extra
-		core_health = buildings[current_core].hp
 	toast("Research complete: " + data.name)
 	if not free: play_sound("research")
 	return true
@@ -319,9 +323,9 @@ func tech_core_unlocked(id: String) -> bool:
 func _add_building(cell: Vector2i, kind: String, direction: int) -> void:
 	building_centers.erase(cell)
 	if kind == "drill": direction = 0
-	var health: float = (200.0 if kind == "core" else float(BUILDINGS[kind].hp)) * (1.25 if researched.has("armor") else 1.0)
+	var health: float = 200.0 if kind == "core" else float(BUILDINGS[kind].hp)
 	if kind == "solar" and researched.has("solar_health"): health += 10.0
-	buildings[cell] = {"kind": kind, "dir": direction, "input_dir": direction, "hp": health, "max_hp": health, "item": "", "travel": 0.0, "progress": 0.0, "cooldown": 0.0, "ammo": 0, "aim": 0.0, "flash": 0.0, "buffer": {"copper": 0, "iron": 0, "verdite": 0, "alloy": 0, "pink": 0}, "paid_cost": {}, "tunnel_role": "", "tunnel_pair": INVALID, "pulse": 0.0}
+	buildings[cell] = {"kind": kind, "dir": direction, "input_dir": direction, "hp": health, "max_hp": health, "item": "", "travel": 0.0, "progress": 0.0, "cooldown": 0.0, "ammo": 0, "aim": 0.0, "flash": 0.0, "buffer": {"copper": 0, "iron": 0, "verdite": 0, "pink": 0}, "paid_cost": {}, "tunnel_role": "", "tunnel_pair": INVALID, "pulse": 0.0}
 	buildings[cell].ammo = turret_ammo_capacity(kind) if is_turret(kind) and not BUILDINGS[kind].get("ammo_free", false) else 0
 	buildings[cell].next_output = direction
 	buildings[cell].shield = kind == "turret" and researched.has("slugger_shield")
@@ -329,6 +333,7 @@ func _add_building(cell: Vector2i, kind: String, direction: int) -> void:
 	buildings[cell].booster_count = 0
 	buildings[cell].booster_used = 0.0
 	buildings[cell].booster_fire_remaining = 0.0
+	buildings[cell].nuclear = {}
 	buildings[cell].pending = kind not in ["core", "belt"] and (not enemies.is_empty() or spawn_remaining > 0)
 	if buildings[cell].pending: has_pending_construction = true
 	buildings[cell].route_dir = -1
@@ -461,7 +466,7 @@ func place_building(cell: Vector2i, kind: String, direction: int, affinity: Stri
 		return false
 	if is_turret(kind):
 		var colors := unlocked_colors(kind)
-		if affinity == "" and colors.size() == 1: affinity = colors[0]
+		if affinity == "": affinity = build_color if colors.has(build_color) else colors[0]
 		if not colors.has(affinity): return false
 	var cost := building_cost(kind, -1, cell)
 	pay(cost)
@@ -489,6 +494,10 @@ func remove_building(cell: Vector2i, refund: bool = true) -> void:
 	for target in targets:
 		if not buildings.has(target): continue
 		var b: Dictionary = buildings[target]
+		var underlay: Dictionary = Nuclear.state(b).get("underlay", {}).duplicate(true)
+		if not underlay.is_empty():
+			underlay.item = b.item
+			underlay.travel = b.travel
 		if b.kind in ["belt", "drill"]:
 			for offset in DIRS:
 				var neighbor: Vector2i = target + offset
@@ -504,6 +513,9 @@ func remove_building(cell: Vector2i, refund: bool = true) -> void:
 		buildings.erase(target)
 		building_centers.erase(target)
 		placement_counts[b.kind] = maxi(0, placement_counts.get(b.kind, 0) - 1)
+		if not underlay.is_empty():
+			_add_building(target, "belt", underlay.dir)
+			buildings[target] = underlay
 		if not combat_preview: tutorial.on_building_removed(target)
 	for resource in inventory: inventory[resource] = mini(inventory[resource], material_capacity(resource))
 	if inspected in targets: inspected = INVALID
@@ -615,15 +627,8 @@ func begin_drag(cell: Vector2i) -> void:
 			report_shortage(building_cost(selected, -1, cell), cell)
 			return
 		if is_turret(selected) and can_build(cell, selected):
-			var colors := unlocked_colors(selected)
-			if colors.size() == 1:
-				place_building(cell, selected, build_direction, colors[0])
-				dragging = false
-				return
-			radial_pending = cell
-			radial_kind = selected
+			place_building(cell, selected, build_direction)
 			dragging = false
-			hud.show_affinity_picker(hud.root.get_global_mouse_position())
 			return
 		if occupied.has(cell) and not (selected == "splitter" and building_at(cell).kind == "belt"): inspected = anchor_at(cell)
 		elif place_building(cell, selected, build_direction):
@@ -886,6 +891,11 @@ func stamp_blueprint(origin: Vector2i) -> bool:
 var camera_right_held := false
 var camera_right_dragged := false
 var camera_right_origin := Vector2.ZERO
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		debug_keys.clear()
+		debug_tech_reveal = false
+		if is_instance_valid(hud): hud.refresh_debug_tech_view()
 func _input(event: InputEvent) -> void:
 	if handle_savestate_shortcut(event):
 		get_viewport().set_input_as_handled()
@@ -921,7 +931,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if handle_savestate_shortcut(event): return
 	if handle_debug_shortcut(event): return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_M:
-		toggle_audio()
+		if not event.shift_pressed: toggle_audio()
 		return
 	if radial_pending != INVALID:
 		if event is InputEventMouseButton:
@@ -952,7 +962,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				if not tutorial_enabled or tutorial.stage >= tutorial.Stage.READY: cycle_speed()
 			KEY_F: camera.position = cell_center(current_core) + Vector2(170, -35)
 			KEY_T: hud.show_tech_tree()
-			KEY_M: toggle_audio()
+			KEY_M:
+				if not event.shift_pressed: toggle_audio()
 	if event is InputEventMouseButton:
 		if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 			if event.pressed: step_camera_zoom(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
@@ -1120,7 +1131,6 @@ func simulate(dt: float) -> void:
 		b.pulse = maxf(0, b.pulse - dt)
 		if b.get("pending", false): continue
 		if is_turret(b.kind): _update_turret(cell, b, dt)
-		elif b.kind == "forge": _update_forge(b, dt)
 	if not wave_warp_active: advance_logistics(dt)
 	_update_enemies(dt)
 	for i in range(shots.size() - 1, -1, -1):
@@ -1147,7 +1157,6 @@ func output_target(cell: Vector2i, b: Dictionary) -> Vector2i:
 	if b.kind in ["splitter", "drill", "teleporter"]: return cell + DIRS[b.route_dir] if b.route_dir >= 0 else INVALID
 	if b.tunnel_role == "entry": return b.tunnel_pair
 	var offset: Vector2i = DIRS[b.dir]
-	if b.kind == "forge" and b.dir in [0, 1]: offset *= 2
 	return cell + offset
 func can_receive(target: Vector2i, item: String, source: Vector2i = INVALID) -> bool:
 	var anchor := anchor_at(target)
@@ -1155,6 +1164,10 @@ func can_receive(target: Vector2i, item: String, source: Vector2i = INVALID) -> 
 	var b: Dictionary = buildings[anchor]
 	if b.get("pending", false): return false
 	if b.kind == "core": return inventory.has(item) and inventory[item] < material_capacity(item)
+	var inputs: Dictionary = BUILDINGS.get(b.kind, {}).get("inputs", {})
+	if not inputs.is_empty():
+		if item in inputs and b.buffer.get(item, 0) < inputs[item]: return true
+		return false
 	if b.kind == "teleporter": return not teleporters.is_output(anchor) and b.item == ""
 	if b.kind in ["belt", "splitter"]: return b.item == ""
 	if is_turret(b.kind):
@@ -1162,7 +1175,6 @@ func can_receive(target: Vector2i, item: String, source: Vector2i = INVALID) -> 
 		return not BUILDINGS[b.kind].get("ammo_free", false) and BUILDINGS[b.kind].ammo == item and b.ammo < turret_ammo_capacity(b.kind)
 	if b.kind == "refinery": return item in ["copper", "iron"] and b.buffer[item] < 5
 	if b.kind in ["healer", "copper_store", "iron_store"]: return item == "pink" and b.buffer.pink < 10
-	if b.kind == "forge": return item in ["copper", "iron"] and b.buffer[item] < 10
 	return false
 func _update_items(dt: float) -> void:
 	teleporters.transfer()
@@ -1198,7 +1210,7 @@ func _move_items() -> void:
 			var target := output_target(cell, b)
 			var anchor := anchor_at(target)
 			if reserved.has(anchor): continue
-			if can_receive(target, b.item, cell) or (anchor != cell and departing.has(anchor) and not (buildings[anchor].kind == "teleporter" and teleporters.is_output(anchor))):
+			if can_receive(target, b.item, cell) or (anchor != cell and departing.has(anchor) and buildings[anchor].kind in ["belt", "splitter", "teleporter"] and not (buildings[anchor].kind == "teleporter" and teleporters.is_output(anchor))):
 				departing[cell] = true
 				reserved[anchor] = true
 				transfers.append({"from": cell, "to": anchor, "item": b.item})
@@ -1218,27 +1230,19 @@ func _move_items() -> void:
 
 			delivered += 1
 			receiver.flash = 0.35
+		elif BUILDINGS.get(receiver.kind, {}).has("inputs") and transfer.item in BUILDINGS[receiver.kind].inputs and receiver.buffer.get(transfer.item, 0) < BUILDINGS[receiver.kind].inputs[transfer.item]:
+			receiver.buffer[transfer.item] = receiver.buffer.get(transfer.item, 0) + 1
 		elif is_turret(receiver.kind):
 			if Content.BOOSTERS.has(transfer.item):
 				receiver.booster_type = transfer.item
 				receiver.booster_count += 1
 			else: receiver.ammo += 1
-		elif receiver.kind in ["forge", "healer", "refinery", "iron_store", "copper_store"]: receiver.buffer[transfer.item] += 1
+		elif receiver.kind in ["healer", "refinery", "iron_store", "copper_store"]: receiver.buffer[transfer.item] += 1
 		else:
 			receiver.item = transfer.item
 			if receiver.kind == "teleporter": receiver.progress = 0.0
 			receiver.travel = 0.0
 			if receiver.kind in ["splitter", "teleporter"]: receiver.route_dir = -1
-func _update_forge(b: Dictionary, dt: float) -> void:
-	if b.buffer.copper < 2 or b.buffer.iron < 2 or b.item != "": return
-	b.progress += dt
-	if b.progress >= 3.0:
-		b.buffer.copper -= 2
-		b.buffer.iron -= 2
-		b.item = "alloy"
-		b.travel = 0.0
-		b.progress = 0.0
-		b.flash = 0.8
 func _update_healer(cell: Vector2i, b: Dictionary, dt: float) -> void:
 	preload("res://scripts/pink_support.gd").heal(self, cell, b, dt)
 func create_enemy(kind: String, pos: Vector2, affinity: String) -> Dictionary:
@@ -1259,8 +1263,12 @@ func _spawn_enemy() -> void:
 	enemies.append(enemy)
 func _update_turret(cell: Vector2i, b: Dictionary, dt: float) -> void:
 	if b.get("pending", false): return
+	if BUILDINGS[b.kind].get("nuclear_turret", false):
+		Nuclear.tower(self, cell, b, dt)
+		return
 	preload("res://scripts/pink_production.gd").advance_firing(b, dt)
 	var boost_speed := preload("res://scripts/pink_production.gd").speed_multiplier(b)
+	if Nuclear.state(b).get("injected", 0.0) > 0: boost_speed *= 2
 	b.cooldown = maxf(0, b.cooldown) - dt * boost_speed
 	var data: Dictionary = BUILDINGS[b.kind]
 	var reload_time := turret_reload(b.kind)
@@ -1282,11 +1290,11 @@ func _update_turret(cell: Vector2i, b: Dictionary, dt: float) -> void:
 	while (data.get("ammo_free", false) or b.ammo > 0) and b.cooldown <= 0 and enemy.hp > 0 and (b.kind != "turret" or b.progress >= reload_time - 0.00001):
 		if b.kind == "turret": b.progress = 0.0
 		if not data.get("ammo_free", false): b.ammo -= 1
-		play_sound("cannon" if b.kind == "cannon" else "shot", origin)
+		play_sound("shot", origin)
 		b.cooldown += reload_time
 		b.booster_fire_remaining = 0.12 if b.kind == "turret" else 0.11
 		b.flash = 1.0
-		var damage: float = data.damage * (1.25 if researched.has("damage") else 1.0) * affinity_multiplier(b.color, enemy.color)
+		var damage: float = data.damage * affinity_multiplier(b.color, enemy.color)
 		if b.kind != "turret": enemy.hp -= damage
 		if b.kind != "turret": enemy.flash = 1.0
 		var color: Color = Color("69cbff") if b.kind == "solar" else TEAM_COLORS[b.color]
@@ -1308,7 +1316,8 @@ func _update_enemies(dt: float) -> void:
 			continue
 		enemy.flash = maxf(0, enemy.flash - dt * 5)
 		enemy.recoil = maxf(0, float(enemy.get("recoil", 0.0)) - dt * 5)
-		enemy.cooldown = maxf(0, enemy.cooldown) - dt
+		var slow := 0.6 if enemy.get("nuclear_slow_time", 0.0) > 0 else 1.0
+		enemy.cooldown = maxf(0, enemy.cooldown) - dt * slow
 		enemy.windup = maxf(0, float(enemy.get("windup", 0.0)) - dt)
 		enemy.navigation_timer = float(enemy.get("navigation_timer", 0.0)) - dt
 		enemy.separation_cooldown = maxf(0, float(enemy.get("separation_cooldown", 0.0)) - dt)
@@ -1363,7 +1372,7 @@ func _update_enemies(dt: float) -> void:
 			var direction := toward.normalized()
 			var approach := clampf(toward.length() / 16.0, 0.1, 1.0)
 			if not separating and navigation.get("path_index", 0) + 1 < navigation.get("path", []).size(): approach = 1.0
-			desired = direction * enemy.speed * approach
+			desired = direction * enemy.speed * approach * slow
 		var velocity: Vector2 = enemy.get("velocity", Vector2.ZERO)
 		velocity = velocity.move_toward(desired, (2000.0 if desired != Vector2.ZERO else 3500.0) * dt)
 		var next_position: Vector2 = enemy.pos + velocity * dt
@@ -1396,7 +1405,7 @@ func _update_enemies(dt: float) -> void:
 		var aim_target: Vector2 = building_center(shot_target if shot_target != INVALID else target)
 		enemy.aim = lerp_angle(float(enemy.get("aim", enemy.angle)), (aim_target - enemy_visual_position(enemy)).angle(), 1.0 - exp(-9.0 * dt))
 		if enemy.kind in ["bulwark", "siege"]:
-			enemy.charge = minf(1.0, float(enemy.get("charge", 0.0)) + dt / stats.reload) if shot_target != INVALID else 0.0
+			enemy.charge = minf(1.0, float(enemy.get("charge", 0.0)) + dt * slow / stats.reload) if shot_target != INVALID else 0.0
 		while shot_target != INVALID and buildings.has(shot_target) and enemy.cooldown <= 0 and (enemy.kind not in ["bulwark", "siege"] or enemy.get("charge", 0.0) >= 0.99999):
 			if enemy.kind in ["bulwark", "siege"]: enemy.charge = 0.0
 			enemy.recoil = 1.0
@@ -1463,6 +1472,8 @@ func _damage_building(cell: Vector2i, amount: float) -> void:
 	if anchor == INVALID: return
 	var b: Dictionary = buildings[anchor]
 	if b.get("pending", false): return
+	amount = Nuclear.damage(self, anchor, amount)
+	if amount <= 0: return
 	if amount > 0 and b.get("shield", false):
 		b.shield = false
 		b.pulse = 0.65
@@ -1494,6 +1505,7 @@ func _sparks(pos: Vector2, color: Color, count: int) -> void:
 func _draw() -> void:
 	if camera == null: return
 	for cell in buildings: _draw_building(cell, buildings[cell])
+	Nuclear.draw(self)
 	teleporters.draw_links()
 	for effect in demolitions:
 		var age: float = 1.0 - effect.life / 0.3
@@ -1551,6 +1563,7 @@ func _draw_cursor() -> void:
 			var size_px: float = footprint_size(config.kind) * TILE
 			var rect := Rect2(Vector2((hover_cell + config.offset) * TILE), Vector2.ONE * size_px)
 			var texture: Texture2D = textures["tunnel_" + config.tunnel_role if config.kind == "belt" and config.tunnel_role != "" else config.kind]
+			if is_turret(config.kind): texture = preload("res://scripts/turret_art.gd").texture(texture, config.kind, TEAM_COLORS[config.color])
 			if config.kind == "teleporter" and config.tunnel_role == "exit": texture = textures["teleporter_output_%d" % int(config.dir)]
 			draw_set_transform(rect.get_center(), config.dir * PI / 2.0 if config.kind == "belt" else 0.0)
 			draw_texture_rect(texture, Rect2(-rect.size / 2, rect.size), false, tint)
@@ -1570,16 +1583,23 @@ func _draw_cursor() -> void:
 			for i in range(0, int(length), 7): draw_circle(start.lerp(end, float(i) / length), line_width() / 2, Color(1, 1, 1, 0.38))
 		if is_turret(b.kind): _draw_range(building_center(anchor), turret_range(b.kind), TEAL)
 		elif b.kind == "healer": draw_rect(Rect2(Vector2((anchor - Vector2i.ONE) * TILE), Vector2.ONE * TILE * 3), Color(RESOURCE_COLORS.pink, 0.5), false, line_width())
+		elif BUILDINGS.get(b.kind, {}).has("square"):
+			var side: float = BUILDINGS[b.kind].square * TILE
+			draw_rect(Rect2(building_center(anchor) - Vector2.ONE * side / 2, Vector2.ONE * side), Color(Nuclear.GLOW, 0.5), false, line_width())
 	elif active_tool == "build" and not selected.is_empty():
 		var color := TEAL if can_build(hover_cell, selected) else RED
 		var dim: float = TILE * footprint_size(selected)
 		var rect := Rect2(Vector2(hover_cell * TILE), Vector2.ONE * dim)
 		draw_set_transform(rect.get_center(), build_direction * PI / 2.0 if selected == "belt" else 0.0)
-		var ghost_texture: Texture2D = textures.belt_dark if selected == "belt" and not researched.has("conveyor_speed") else textures[selected]
+		var ghost_texture: Texture2D = textures.belt_dark if selected == "belt" else textures[selected]
+		if is_turret(selected): ghost_texture = preload("res://scripts/turret_art.gd").texture(ghost_texture, selected, TEAM_COLORS[build_color])
 		draw_texture_rect(ghost_texture, Rect2(-rect.size / 2, rect.size), false, Color(color, 0.45))
 		draw_set_transform(Vector2.ZERO)
 		draw_rect(rect, color, false, line_width())
 		if is_turret(selected): _draw_range(rect.get_center(), turret_range(selected), color)
+		elif BUILDINGS.get(selected, {}).has("square"):
+			var side: float = BUILDINGS[selected].square * TILE
+			draw_rect(Rect2(rect.get_center() - Vector2.ONE * side / 2, Vector2.ONE * side), Color(color, 0.5), false, line_width())
 		elif selected == "healer": draw_rect(Rect2(Vector2((hover_cell - Vector2i.ONE) * TILE), Vector2.ONE * TILE * 3), Color(color, 0.5), false, line_width())
 	else: draw_rect(Rect2(Vector2(hover_cell * TILE), Vector2.ONE * TILE), Color(RED if active_tool == "abolish" else TEAL, 0.15))
 func _draw_range(origin: Vector2, radius: float, color: Color) -> void:
@@ -1618,21 +1638,22 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 	var p := building_center(cell).round()
 	var dimension: float = 44.0 if b.kind == "core" else TILE * footprint_size(b.kind)
 	var rect := Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension)
-	var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not researched.has("conveyor_speed") else textures[b.kind]
+	var texture: Texture2D = textures.belt_dark if b.kind == "belt" else textures[b.kind]
 	if b.kind == "solar": texture = textures.solar_base
+	if is_turret(b.kind): texture = preload("res://scripts/turret_art.gd").texture(texture, "solar_base" if b.kind == "solar" else b.kind, TEAM_COLORS[b.color])
 	if b.kind == "teleporter" and teleporters.is_output(cell): texture = textures["teleporter_output_%d" % int(b.dir)]
 	if b.kind == "core" and cell != current_core: texture = textures.core_inactive
 	var angle: float = b.dir * PI / 2.0 if b.kind == "belt" else 0.0
 	var flip := Vector2.ONE
 	if b.kind == "belt" and b.tunnel_role != "": texture = textures["tunnel_" + b.tunnel_role]
 	elif b.kind == "belt" and b.input_dir != b.dir and (int(b.dir) - int(b.input_dir) + 4) % 2 == 1:
-		texture = textures.belt_corner if researched.has("conveyor_speed") else textures.belt_corner_dark
+		texture = textures.belt_corner_dark
 		angle = b.input_dir * PI / 2.0
 		if (int(b.dir) - int(b.input_dir) + 4) % 4 == 3: flip.y = -1
 	if b.kind == "belt" and b.tunnel_role == "":
 		var mask := belt_port_mask(cell)
 		if mask in [7, 11, 13, 14, 15]:
-			texture = textures["belt_junction_%d%s" % [mask, "" if researched.has("conveyor_speed") else "_dark"]]
+			texture = textures["belt_junction_%d%s" % [mask, "_dark"]]
 			angle = 0.0
 			flip = Vector2.ONE
 	draw_set_transform(p, angle, flip)
@@ -1672,8 +1693,8 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 			var loading: float = clampf(b.progress / BUILDINGS.turret.reload, 0, 1)
 			gun_position -= Vector2.from_angle(b.aim) * (pow(loading, 3) * 4 + b.flash * 6)
 		draw_set_transform(gun_position.round(), b.aim)
-		if b.kind == "solar": draw_texture_rect(textures.solar_gun, Rect2(-16, -16, 32, 32), false)
-		else: draw_texture_rect(textures.barrel, Rect2(-16, -16, 32, 32), false, Color("c1cdd0") if b.kind in ["cannon", "turret"] else Color.WHITE)
+		if b.kind == "solar": draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures.solar_gun, "solar_gun", TEAM_COLORS[b.color]), Rect2(-16, -16, 32, 32), false)
+		else: draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures.barrel, "barrel", TEAM_COLORS[b.color]), Rect2(-16, -16, 32, 32), false)
 		draw_set_transform(Vector2.ZERO)
 		if b.kind == "turret" and b.progress > 0:
 			var charge: float = clampf(b.progress / BUILDINGS.turret.reload, 0, 1)
@@ -1713,10 +1734,6 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 		draw_rect(Rect2(fuel.position, Vector2(dimension * b.buffer.pink / 10.0, 3)), RESOURCE_COLORS.pink)
 	elif b.kind == "healer" and b.pulse > 0:
 		draw_rect(Rect2(Vector2((cell - Vector2i.ONE) * TILE), Vector2.ONE * TILE * 3), Color(RESOURCE_COLORS.pink, b.pulse * 0.45), false, line_width())
-	elif b.kind == "forge":
-		draw_rect(Rect2(p + Vector2(-21, 23), Vector2(42 * b.progress / 3.0, 3)), RESOURCE_COLORS.alloy)
-		var out := cell_center(output_target(cell, b))
-		draw_line(p, p.lerp(out, 0.65), Color(TEAL, 0.4), line_width())
 	if b.kind in ["wall", "wall_iron"] or b.hp < b.max_hp:
 		draw_rect(Rect2(p + Vector2(-13, -dimension / 2 - 5), Vector2(26, 3)), Color("25191a"))
 		draw_rect(Rect2(p + Vector2(-13, -dimension / 2 - 5), Vector2(26 * maxf(0, b.hp) / b.max_hp, 3)), TEAL if b.hp / b.max_hp > 0.4 else RED)
@@ -2071,8 +2088,9 @@ func splitter_outputs(cell: Vector2i, item: String = "") -> Array[int]:
 			if output_target(neighbor, receiver) != cell: result.append(direction)
 		elif item != "":
 			if can_receive(neighbor, item, cell): result.append(direction)
-		elif receiver.kind in ["core", "teleporter", "splitter", "forge", "healer", "refinery", "iron_store", "copper_store"] or is_turret(receiver.kind):
+		elif receiver.kind in ["core", "teleporter", "splitter", "healer", "refinery", "iron_store", "copper_store"] or is_turret(receiver.kind):
 			result.append(direction)
+		elif BUILDINGS.get(receiver.kind, {}).has("inputs"): result.append(direction)
 	return result
 func update_splitter_route(cell: Vector2i, b: Dictionary) -> void:
 	var outputs := extractor_outputs(cell, b) if b.kind == "drill" else splitter_outputs(cell, b.item)
@@ -2097,13 +2115,24 @@ func handle_debug_shortcut(event: InputEvent) -> bool:
 	if not (event is InputEventKey): return false
 	if event.pressed: debug_keys[event.keycode] = true
 	else: debug_keys.erase(event.keycode)
-	if not event.pressed or event.echo: return false
 	var platform_features := platform_debug_features()
 	if not debug_features_allowed(platform_features): return false
+	var reveal: bool = event.shift_pressed and debug_keys.has(KEY_Z) and not (event.keycode == KEY_SHIFT and not event.pressed)
+	if reveal != debug_tech_reveal:
+		debug_tech_reveal = reveal
+		hud.refresh_debug_tech_view()
+	if not event.pressed or event.echo: return false
 	if developer_mode and event.keycode in [KEY_G, KEY_H] and not event.ctrl_pressed and not event.alt_pressed and not event.shift_pressed:
 		developer_waves.start(event.keycode == KEY_G)
 		return true
 	if not event.shift_pressed: return false
+	if event.keycode in [KEY_Z, KEY_M, KEY_N] and debug_keys.has(KEY_Z):
+		if debug_keys.has(KEY_M):
+			preload("res://scripts/debug_tools.gd").next_core(self)
+			return true
+		if debug_keys.has(KEY_N):
+			preload("res://scripts/debug_tools.gd").previous_core(self)
+			return true
 	if event.keycode in [KEY_SHIFT, KEY_Z, KEY_B] and debug_keys.has(KEY_Z) and debug_keys.has(KEY_B):
 		developer_mode = true
 		hud.refresh_developer_waves()
@@ -2132,37 +2161,23 @@ func platform_debug_features() -> PackedStringArray:
 	return features
 
 func unlocked_colors(kind: String) -> Array[String]:
-	var colors: Array[String] = []
-	for color in TEAM_COLORS:
-		if researched.has(kind + "_" + color): colors.append(color)
-	if kind == "turret" and researched.has("weapons") and not colors.has("red"): colors.push_front("red")
+	if not is_turret(kind): return []
+	var colors: Array[String] = ["red"]
+	if researched.has("turret_color"): colors.assign(["red", "green", "blue"])
 	return colors
 
 func _add_color_tech() -> void:
 	for id in TECH:
-		if id not in ["barriers", "conveyor_speed", "turret_range", "copper_storage", "auto_scrap", "build_hotkeys", "time_speed"]: TECH[id].pos.y += 310
-	var row := 0
-	for kind in ["solar", "turret", "repeater", "cannon"]:
-		var parent: String = "conveyor_speed" if kind == "solar" else BUILDINGS[kind].tech
-		var column := 0
-		for color in TEAM_COLORS:
-			TECH[kind + "_" + color] = {"name": BUILDINGS[kind].name + ": " + color.capitalize(), "parent": parent, "cost": {"copper": 15 + row * 10, "iron": 5 + row * 5}, "icon": kind, "pos": Vector2(24 + column * 228, 1160 + row * 155), "color": color}
-			TECH[kind + "_" + color].description = "Unlocks %s shots for this turret." % color
-			if kind == "solar" and color == "red":
-				TECH.solar_red.starter_color = true
-				TECH.solar_red.cost = {}
-				researched.solar_red = true
-			column += 1
-		row += 1
-	for id in TECH:
-		if str(TECH[id].get("description", "")).is_empty(): TECH[id].description = Content.TECH_DESCRIPTIONS[id]
+		if Nuclear.DESCRIPTIONS.has(id): TECH[id].description = Nuclear.DESCRIPTIONS[id]
+		if str(TECH[id].get("description", "")).is_empty(): TECH[id].description = Content.TECH_DESCRIPTIONS.get(id, "")
+
 func owned_building_counts() -> Dictionary:
 	var counts: Dictionary = {}
 	for b in buildings.values():
 		if b.kind != "core": counts[b.kind] = counts.get(b.kind, 0) + 1
 	return counts
 func conveyor_items_per_second(kind: String = "belt") -> float:
-	return 1.0 if kind in ["belt", "splitter", "teleporter"] and researched.has("conveyor_speed") else 0.5
+	return 0.5
 func turret_range(kind: String) -> float:
 	return float(BUILDINGS[kind].range) + (TILE * 2 if kind == "solar" and researched.has("turret_range") else 0)
 
@@ -2197,12 +2212,13 @@ func advance_logistics(duration: float) -> void:
 	while remaining > 0.000001:
 		var step := minf(0.05, remaining)
 		elapsed += step
+		Nuclear.advance(self, step)
 		for cell in buildings:
 			var building: Dictionary = buildings[cell]
 			if building.get("pending", false): continue
 			if building.kind == "healer": _update_healer(cell, building, step)
 			if building.kind != "drill": continue
-			building.progress = minf(5.0, building.progress + step * (1.3 if researched.has("mining") else 1.0))
+			building.progress = minf(5.0, building.progress + step * Nuclear.production_speed(building))
 			if building.progress >= 4.99999 and building.item == "":
 				building.item = ores.get(cell, "copper")
 				building.travel = 0.0
@@ -2261,15 +2277,17 @@ func draw_pending_building(cell: Vector2i, building: Dictionary) -> void:
 	var dimension: float = TILE * footprint_size(building.kind)
 	var center := building_center(cell).round()
 	var texture: Texture2D = textures.solar_base if building.kind == "solar" else textures[building.kind]
+	if is_turret(building.kind): texture = preload("res://scripts/turret_art.gd").texture(texture, "solar_base" if building.kind == "solar" else building.kind, TEAM_COLORS[building.color])
 	if building.kind == "teleporter" and teleporters.is_output(cell): texture = textures["teleporter_output_%d" % int(building.dir)]
-	if building.kind == "belt" and not researched.has("conveyor_speed"): texture = textures.belt_dark
+	if building.kind == "belt": texture = textures.belt_dark
 	if building.kind == "belt" and building.get("tunnel_role", "") != "": texture = textures["tunnel_" + building.tunnel_role]
 	draw_set_transform(center, building.dir * PI / 2.0 if building.kind == "belt" else 0.0)
 	preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension))
 	draw_set_transform(Vector2.ZERO)
 	if is_turret(building.kind):
 		draw_set_transform(center, building.aim)
-		draw_texture_rect(textures.solar_gun if building.kind == "solar" else textures.barrel, Rect2(-16, -16, 32, 32), false, Color(1, 1, 1, 0.33))
+		var part := "solar_gun" if building.kind == "solar" else "barrel"
+		draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures[part], part, TEAM_COLORS[building.color]), Rect2(-16, -16, 32, 32), false, Color(1, 1, 1, 0.33))
 		draw_set_transform(Vector2.ZERO)
 
 func handle_savestate_shortcut(event: InputEvent) -> bool:

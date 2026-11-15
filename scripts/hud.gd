@@ -82,6 +82,7 @@ var category := ""
 var category_buttons: Dictionary = {}
 var tool_buttons: Dictionary = {}
 var cards: Dictionary = {}
+var build_filters: RefCounted
 var card_views: Dictionary = {}
 var tech_buttons: Dictionary = {}
 var tech_resource_labels: Dictionary = {}
@@ -146,6 +147,8 @@ func _ready() -> void:
 	_build_resources()
 	_build_developer_waves()
 	_build_palette()
+	build_filters = preload("res://scripts/build_filters.gd").new(self)
+	build_filters.build()
 	_build_map()
 	_build_wave_controls()
 	save_browser = preload("res://scripts/save_browser.gd").new(self)
@@ -441,7 +444,7 @@ func _build_palette() -> void:
 	# Kept intact for a future switch to separate categories.
 	for group in ["Logistics", "Extraction", "Defense", "Production", "Support", "Storage"]:
 		var card := button(palette, "", Vector2.ZERO, Vector2(80, 72), func(): toggle_category(group))
-		var kind: String = {"Logistics": "belt", "Extraction": "drill", "Defense": "solar", "Production": "forge", "Support": "healer", "Storage": "copper_store"}[group]
+		var kind: String = {"Logistics": "belt", "Extraction": "drill", "Defense": "solar", "Production": "refinery", "Support": "healer", "Storage": "copper_store"}[group]
 		icon(card, game.ui_textures[kind], Vector2(24, 20), Vector2(32, 32))
 		set_info(card, group, "Choose a structure to build.", "")
 		category_buttons[group] = card
@@ -456,13 +459,13 @@ func _build_palette() -> void:
 	expanded.anchor_top = 1
 	expanded.anchor_bottom = 1
 	expanded.hide()
-func unlocked_in_category(group: String) -> Array[String]:
+func unlocked_in_category(group: String, filtered: bool = true) -> Array[String]:
 	var result: Array[String] = []
 	for kind in game.BUILDINGS:
 		var matches: bool = group == "Structures" or game.BUILDINGS[kind].category == group
 		if group == "Infrastructure": matches = game.BUILDINGS[kind].category != "Defense"
 		if group == "Defence": matches = game.BUILDINGS[kind].category == "Defense"
-		if matches and game.unlocked(kind): result.append(kind)
+		if matches and game.unlocked(kind) and (not filtered or build_filters == null or build_filters.allows(kind)): result.append(kind)
 	return result
 func toggle_category(group: String) -> void:
 	if not game.separate_build_categories and not game.researched.has("barriers"): group = "Structures"
@@ -471,7 +474,7 @@ func toggle_category(group: String) -> void:
 	if category == group:
 		category = ""
 		hide_tray()
-	elif unlocked_in_category(group).is_empty():
+	elif unlocked_in_category(group, false).is_empty():
 		category = ""
 		hide_tray()
 		show_tech_tree()
@@ -502,25 +505,44 @@ func _rebuild_cards() -> void:
 	expanded.visible = category != ""
 	if category == "": return
 	var kinds := unlocked_in_category(category)
+	if kinds.is_empty():
+		expanded.hide()
+		return
 	var columns := mini(3, maxi(1, kinds.size()))
 	var rows := maxi(1, ceili(float(kinds.size()) / columns))
 	var tray_width := float(columns * 188)
 	var tray_height := float(rows * 80 + 24)
+	var visible_height := minf(tray_height, maxf(104, root.size.y - 164))
 	var center: float = category_buttons[category].position.x + category_buttons[category].size.x / 2
 	var left := clampf(center - tray_width / 2, 0, root.size.x - tray_width)
 	expanded.offset_left = left
 	expanded.offset_right = left + tray_width
-	expanded.offset_top = -72 - tray_height
-	expanded.offset_bottom = -72
+	expanded.offset_top = -136 - visible_height
+	expanded.offset_bottom = -136
 	expanded.modulate.a = 1
 	label(expanded, category.to_upper(), Vector2.ZERO, Vector2(expanded.size.x, 24), 11, ACCENT)
+	var card_parent: Control = expanded
+	var card_y := 24.0
+	var card_width := 188.0
+	if visible_height < tray_height:
+		var scroll := ScrollContainer.new()
+		scroll.position = Vector2(0, 24)
+		scroll.size = Vector2(tray_width, visible_height - 24)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		expanded.add_child(scroll)
+		card_parent = Control.new()
+		card_parent.custom_minimum_size = Vector2(tray_width - 16, rows * 80)
+		scroll.add_child(card_parent)
+		card_y = 0.0
+		card_width = (tray_width - 16) / columns
 	var index := 0
 	for kind in kinds:
 		var data: Dictionary = game.BUILDINGS[kind]
-		var card := button(expanded, "", Vector2((index % columns) * 188, 24 + (index / columns) * 80), Vector2(188, 80), func():
+		var card := button(card_parent, "", Vector2((index % columns) * card_width, card_y + (index / columns) * 80), Vector2(card_width, 80), func():
 			game.select_building(kind)
 		)
-		icon(card, game.ui_textures[kind], Vector2(8, 8), Vector2(32, 32))
+		var sprite := icon(card, game.ui_textures[kind], Vector2(8, 8), Vector2(32, 32))
+		if game.is_turret(kind): sprite.texture = preload("res://scripts/turret_art.gd").texture(sprite.texture, kind, game.TEAM_COLORS[game.build_color])
 		label(card, data.name, Vector2(46, 8), Vector2(134, 32), 13)
 		var amounts := cost_row(card, game.building_cost(kind), Vector2(8, 48))
 		if index < 9 and build_hotkeys_available(): set_hotkey_label(card, str(index + 1), true)
@@ -602,6 +624,7 @@ func refresh() -> void:
 	if resources.is_empty(): return
 	game.saves.ensure_learning_loaded()
 	_sync_tutorial_ui()
+	if build_filters != null: build_filters.refresh()
 	refresh_developer_waves()
 	if category != "" and research_signature != build_menu_signature(): _rebuild_cards()
 	_refresh_resources()
@@ -678,6 +701,7 @@ func _set_display_amount(value: float, resource: String) -> void:
 	displayed_amounts[resource] = value
 	resources[resource].text = preload("res://scripts/display_numbers.gd").format(roundi(value))
 func _process(dt: float) -> void:
+	if build_filters != null: build_filters.refresh()
 	var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.004)
 	tutorial_prompt.add_theme_color_override("font_shadow_color", Color(1, 0.7, 0.1, 0.35 + pulse * 0.3))
 	_refresh_tooltip()
@@ -690,7 +714,7 @@ func _process(dt: float) -> void:
 	screen_edges.material.set_shader_parameter("paused", game.paused)
 	screen_edges.material.set_shader_parameter("demolishing", game.active_tool == "abolish")
 	var outlines := PackedVector4Array()
-	for region in [inventory_panel, developer_panel, map_panel, palette, expanded, tooltip]:
+	for region in [inventory_panel, developer_panel, map_panel, palette, expanded, tooltip, build_filters.material_bar, build_filters.color_bar]:
 		if not is_instance_valid(region) or not region.is_visible_in_tree(): continue
 		var rect: Rect2 = region.get_global_rect()
 		outlines.append(Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
@@ -890,6 +914,8 @@ func decorated_stats(body: String, states: Dictionary) -> String:
 		var stat := ""
 		for pair in [["Health:", "health"], ["Damage:", "damage"], ["DPS:", "dps"], ["Range:", "range"], ["Radius:", "range"], ["Ammo:", "ammo"], ["Transport:", "speed"], ["Extraction:", "speed"], ["Speed:", "speed"], ["Status:", "blocked"]]:
 			if lines[i].begins_with(pair[0]): stat = pair[1]
+		for pair in [["Size:", "size"], ["Fuel:", "fuel"], ["Heat:", "heat"], ["Cooling:", "heat"], ["Shield:", "shield"], ["Recharge:", "shield"], ["Protection:", "shield"], ["Charge:", "timer"], ["Cooldown:", "timer"], ["Cycle:", "timer"], ["Recipe:", "recipe"], ["Stored:", "storage"], ["Storage:", "storage"], ["Wreckage:", "storage"], ["Boost:", "effect"], ["Trigger:", "effect"], ["Slow:", "speed"], ["Radiation:", "damage"], ["Restore:", "health"], ["Blackout:", "blocked"]]:
+			if lines[i].begins_with(pair[0]): stat = pair[1]
 		if stat == "": continue
 		var warning: bool = (stat == "health" and states.get("damaged", false)) or (stat == "ammo" and states.get("empty_ammo", false)) or (stat == "blocked" and states.get("blocked", false))
 		if warning: lines[i] = "[color=#ff716c]" + lines[i] + "[/color]"
@@ -1014,13 +1040,22 @@ func focus_tech_view() -> void:
 	tech_scroll.call_deferred("center_on_tech", game.TECH[focus_id].pos + Vector2(108, 64))
 func visible_tech_ids() -> Array[String]:
 	var result: Array[String] = []
+	if game.debug_tech_reveal:
+		result.assign(game.TECH.keys())
+		return result
 	for id in game.TECH:
-		if id not in ["teleporters", "barriers", "solar_speed", "solar_health", "healer", "iron_barriers", "slugger_shield", "refining", "iron_storage", "time_speed", "turret_range", "copper_storage", "splitter", "weapons"]: continue
 		var parent: String = game.TECH[id].parent
 		if not game.tech_core_unlocked(id) and not game.researched.has(id): continue
+		var prerequisites_met := true
+		for requirement in game.TECH[id].get("requires", []):
+			if not game.researched.has(requirement): prerequisites_met = false
+		if not prerequisites_met and not game.researched.has(id): continue
 		if game.TECH[id].get("starter_color", false) and not game.researched.has(parent): continue
 		if game.researched.has(id) or parent == "" or game.researched.has(parent): result.append(id)
 	return result
+
+func refresh_debug_tech_view() -> void:
+	if is_instance_valid(tech_graph) and is_instance_valid(modal) and modal.visible and not modal.is_queued_for_deletion() and modal.is_ancestor_of(tech_graph): _rebuild_tech_nodes()
 
 func material_known(resource: String) -> bool:
 	if game.inventory.get(resource, 0) > 0: game.discovered_resources[resource] = true
@@ -1046,7 +1081,8 @@ func _rebuild_tech_nodes() -> void:
 	for id in visible_ids:
 		var data: Dictionary = game.TECH[id]
 		var node := button(tech_graph, "", positions[id], card_size, func():
-			if game.research(id):
+			var success: bool = preload("res://scripts/debug_tools.gd").unlock_through_row(game, id) if game.debug_tech_reveal else game.research(id)
+			if success:
 				_rebuild_tech_nodes()
 				refresh()
 				if tech_list_mode: focus_tech_view()
@@ -1067,8 +1103,8 @@ func _rebuild_tech_nodes() -> void:
 		effect.clip_text = false
 		var visible_cost: Dictionary = {}
 		for resource in data.cost: visible_cost[resource] = data.cost[resource]
-		cost_row(node, visible_cost, Vector2(80, 94) if tech_list_mode else Vector2(8, 76))
-		var state := label(node, "", Vector2(80, 114) if tech_list_mode else Vector2(8, 104), Vector2(348, 18) if tech_list_mode else Vector2(200, 20), 10, ACCENT)
+		cost_row(node, visible_cost, Vector2(8, card_size.y - 24))
+		var state := label(node, "", Vector2(8, card_size.y - 24), Vector2(card_size.x - 16, 20), 10, ACCENT)
 		node.set_meta("tutorial_glow", id == "barriers" and not game.researched.has(id) and game.affordable(data.cost))
 		tech_buttons[id] = {"button": node, "state": state, "effect": effect}
 	var region := Rect2()
@@ -1163,7 +1199,7 @@ func _refresh_research() -> void:
 		node.button.set_meta("research_complete", done)
 		node.button.set_meta("tutorial_glow", not done and game.affordable(data.cost) and (id == "barriers" or id == game.tutorial.storage_hint_tech() or (id == "weapons" and game.tutorial.slugger_rewind_hint_active())))
 		var parent_ready: bool = data.parent == "" or game.researched.has(data.parent)
-		node.button.disabled = done or not parent_ready
+		node.button.disabled = not game.debug_tech_reveal and (done or not parent_ready)
 		var amounts: Dictionary = node.button.get_meta("cost_labels", {})
 		var show_cost: bool = not done or (Input.is_key_pressed(KEY_ALT) and node.button.get_global_rect().has_point(node.button.get_global_mouse_position()))
 		for sprite in node.button.get_meta("cost_sprites", []): sprite.visible = show_cost
@@ -1171,8 +1207,29 @@ func _refresh_research() -> void:
 		for resource in amounts:
 			amounts[resource].add_theme_color_override("font_color", Color.WHITE if game.inventory.get(resource, 0) >= data.cost[resource] else ERROR_COLOR)
 		node.state.text = "RESEARCHED" if done else ""
+		layout_tech_price(node, done, id)
 		node.button.add_theme_stylebox_override("normal", style(Color("342025") if done else BACK, BORDER, 3))
 		node.button.add_theme_stylebox_override("disabled", style(Color("342025") if done else BACK, BORDER, 3))
+func layout_tech_price(node: Dictionary, researched: bool, id: String) -> void:
+	var target: Button = node.button
+	var origin := Vector2(8, target.size.y - 24)
+	if researched:
+		origin.x += node.state.get_theme_font("font").get_string_size("RESEARCHED", HORIZONTAL_ALIGNMENT_LEFT, -1, node.state.get_theme_font_size("font_size")).x + 8
+	var amounts: Dictionary = target.get_meta("cost_labels", {})
+	var sprites: Array = target.get_meta("cost_sprites", [])
+	for amount in amounts.values(): amount.scale = Vector2.ONE
+	for sprite in sprites: sprite.size = Vector2(16, 16)
+	layout_cost_amounts(target, amounts, game.TECH[id].cost, origin)
+	# Compress unusually long price rows to fit beside the researched label.
+	var end := origin.x
+	for amount in amounts.values(): end = maxf(end, amount.position.x + amount.size.x)
+	var scale := minf(1.0, (target.size.x - 8 - origin.x) / maxf(1, end - origin.x))
+	for amount in amounts.values():
+		amount.position.x = origin.x + (amount.position.x - origin.x) * scale
+		amount.scale.x = scale
+	for sprite in sprites:
+		sprite.position.x = origin.x + (sprite.position.x - origin.x) * scale
+		sprite.size.x *= scale
 func show_affinity_picker(origin: Vector2) -> void:
 	if is_instance_valid(radial): radial.queue_free()
 	radial = Control.new()
@@ -1360,14 +1417,10 @@ func tech_stat_summary(id: String) -> String:
 		"refining": return "Turns Chicken Nuggets and Fish Scales into Pink Stuff."
 		"iron_storage": return "+40 fish scales capacity per silo when powered"
 		"time_speed": return "Press E for x5 speed"
-		"conveyor_speed": return "Conveyors: 1 → 2 items / second"
 		"turret_range":
 			var base: float = game.BUILDINGS.solar.range / game.TILE
 			var stats = preload("res://scripts/structure_info.gd")
 			return "Solar range: %s → %s tiles" % [stats.number(base), stats.number(base + 2)]
-		"armor": return "+25% building health"
-		"mining": return "+30% extraction speed"
-		"damage": return "+25% turret damage"
 	return str(game.TECH.get(id, {}).get("description", ""))
 
 

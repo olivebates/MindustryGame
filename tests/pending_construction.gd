@@ -30,7 +30,10 @@ func run() -> void:
 	game._update_turret(tower, game.buildings[tower], 5)
 	check(game.shots.is_empty(), "Ghost turret cannot fire")
 	game.saves.capture()
-	check(game.saves.restore(game.saves.current) and game.buildings[wall].pending and game.buildings[tower].pending, "Save restore preserves combat ghosts")
+	check(game.saves.restore(game.saves.current) and not game.buildings[wall].pending and not game.buildings[tower].pending and game.enemies.is_empty(), "Save restore rebuilds pending construction as active before the fresh wave")
+	game.buildings[wall].pending = true
+	game.buildings[tower].pending = true
+	game.enemies.assign([game.create_enemy("scout", game.cell_center(Vector2i(21, 25)), "red")])
 	game.activate_pending_buildings()
 	check(game.buildings[wall].pending, "Living enemies prevent activation")
 	game.enemies.clear()

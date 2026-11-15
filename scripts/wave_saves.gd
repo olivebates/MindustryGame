@@ -1,9 +1,10 @@
 extends RefCounted
 ## Compact wave checkpoints; future history is removed only on resume.
-const VERSION := 17
+const VERSION := 19
+const SaveState = preload("res://scripts/save_state.gd")
 const FIELDS := ["inventory", "researched", "discovered_resources", "wave", "wave_timer", "kills", "delivered", "elapsed", "speed", "current_core", "cores", "placement_counts", "base_material_capacity", "core_health", "won", "lost", "victory_shown", "current_wave_color", "next_wave_color", "debug_unlock_step", "debug_resource_capacity", "base_copper_capacity", "enemies", "spawn_queue", "spawn_remaining", "spawn_timer", "wave_in_progress", "pending_waves"]
 const TUTORIAL_FIELDS := ["stage", "menu_clicked", "building_clicked", "extractors_ever_built", "turrets_ever_built", "waves_started", "tech_available", "tech_opened", "skipped", "paused_once", "second_wave_elapsed", "extractor_connected_once", "structures_opened_once", "first_damage_taken", "info_hover_time", "collected_tutorial_scrap", "barrier_tree_closed", "inspected_things", "first_wave_completed", "speed_toggled", "designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "demolish_entered", "demolish_completed", "onboarding_completed", "category_visits", "pause_exit_completed", "introduced_shortcuts", "ui_revealed", "next_core_target", "next_core_stage", "ammo_tutorial_target", "ammo_tutorial_stage", "pink_lesson_source", "pink_lesson_target", "pink_lesson_kind"]
-const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color", "shield", "pending", "booster_type", "booster_count", "booster_used", "booster_fire_remaining"]
+const BUILD_FIELDS := ["kind", "dir", "input_dir", "hp", "max_hp", "item", "travel", "progress", "cooldown", "ammo", "aim", "flash", "buffer", "paid_cost", "tunnel_role", "tunnel_pair", "pulse", "next_output", "route_dir", "color", "shield", "pending", "booster_type", "booster_count", "booster_used", "booster_fire_remaining", "nuclear"]
 var game: Node2D
 var directory := "user://wave_saves"
 var entries: Array[Dictionary] = []
@@ -12,77 +13,14 @@ var initial_checkpoint: Array = []
 var pending_branch := false
 var last_error := ""
 var quick_slots_directory := ""
-var learning_directory := ""
-var learned_progress: Dictionary = {}
-var learned_resources: Dictionary = {}
-var learning_hash := 0
-const WORLD_TUTORIAL_FIELDS := ["designated_extractor", "designated_turret", "designated_path", "misplaced_buildings", "next_core_target", "ammo_tutorial_target", "pink_lesson_source", "pink_lesson_target", "pink_lesson_kind"]
-func merge_learning(destination: Dictionary, incoming: Dictionary) -> void:
-	for key in incoming:
-		var value = incoming[key]
-		if value is Dictionary:
-			if not destination.get(key) is Dictionary: destination[key] = {}
-			merge_learning(destination[key], value)
-		elif value is bool: destination[key] = destination.get(key, false) or value
-		elif value is int or value is float: destination[key] = max(destination.get(key, value), value)
 func ensure_learning_loaded() -> void:
-	if learning_directory == directory: return
-	learning_directory = directory
-	learned_progress = {}
-	learned_resources = {}
-	learning_hash = 0
-	var path := directory.path_join("tutorial.learned")
-	if FileAccess.file_exists(path):
-		var bytes := FileAccess.get_file_as_bytes(path).decompress_dynamic(1048576, FileAccess.COMPRESSION_DEFLATE)
-		var data = bytes_to_var(bytes) if not bytes.is_empty() else null
-		if data is Dictionary:
-			learned_progress = data.get("progress", {})
-			learned_resources = data.get("resources", {})
-	if not entries.is_empty():
-		var data := load_snapshot(entries.size() - 1)
-		if not data.is_empty():
-			var archived: Dictionary = {}
-			for index in TUTORIAL_FIELDS.size():
-				if TUTORIAL_FIELDS[index] not in WORLD_TUTORIAL_FIELDS: archived[TUTORIAL_FIELDS[index]] = data[3][index]
-			merge_learning(learned_progress, archived)
-			if not learned_progress.has("ui_revealed"): learned_progress.ui_revealed = {}
-			learned_progress.ui_revealed.max_core_count = maxi(int(learned_progress.ui_revealed.get("max_core_count", 1)), data[1][10].size())
-			learned_resources.merge(data[1][2], true)
-			if data[1][1].has("barriers"):
-				if not learned_progress.has("ui_revealed"): learned_progress.ui_revealed = {}
-				learned_progress.ui_revealed.barrier_building = true
-	apply_learning()
+	# Tutorial and discovery state now come from the retained world state.
+	# Legacy tutorial.learned files are intentionally ignored.
+	pass
 func apply_learning() -> void:
-	for field in learned_progress:
-		if field not in TUTORIAL_FIELDS or field in WORLD_TUTORIAL_FIELDS: continue
-		var value = learned_progress[field]
-		var current = game.tutorial.get(field)
-		if value is Dictionary:
-			var merged: Dictionary = current.duplicate(true)
-			merge_learning(merged, value)
-			game.tutorial.set(field, merged)
-		elif value is bool: game.tutorial.set(field, current or value)
-		elif value is int or value is float: game.tutorial.set(field, max(current, value))
-	game.discovered_resources.merge(learned_resources, true)
-	if game.tutorial.ui_revealed.get("barrier_building", false): game.researched.barriers = true
+	pass
 func remember_learning() -> void:
-	ensure_learning_loaded()
 	game.tutorial.ui_revealed.max_core_count = maxi(int(game.tutorial.ui_revealed.get("max_core_count", 1)), game.cores.size())
-	var current: Dictionary = {}
-	for field in TUTORIAL_FIELDS:
-		if field not in WORLD_TUTORIAL_FIELDS: current[field] = game.tutorial.get(field)
-	merge_learning(learned_progress, current)
-	learned_resources.merge(game.discovered_resources, true)
-	var bytes := var_to_bytes({"progress": learned_progress, "resources": learned_resources})
-	var next_hash := hash(bytes)
-	if next_hash == learning_hash: return
-	if DirAccess.make_dir_recursive_absolute(directory) != OK: return
-	var path := directory.path_join("tutorial.learned")
-	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
-	if file == null: return
-	file.store_buffer(bytes.compress(FileAccess.COMPRESSION_DEFLATE))
-	file.close()
-	if DirAccess.rename_absolute(path + ".tmp", path) == OK: learning_hash = next_hash
 func _init(owner: Node2D) -> void:
 	game = owner
 	# Test scripts never read or overwrite player history.
@@ -103,34 +41,7 @@ func read_index() -> void:
 			if parts.size() == 3: entries.append({"file": file, "wave": int(parts[1]), "time": int(parts[2])})
 	current = entries.size() - 1
 func snapshot() -> Array:
-	remember_learning()
-	game.tutorial.shortcut_lines()
-	for resource in game.inventory:
-		if game.inventory[resource] > 0: game.discovered_resources[resource] = true
-	var values: Array = []
-	for field in FIELDS:
-		if field == "enemies":
-			var enemies: Array = game.enemies.duplicate(true)
-			for enemy in enemies:
-				enemy.erase("navigation")
-				enemy.erase("navigation_timer")
-			values.append(enemies)
-		else: values.append(game.owned_building_counts() if field == "placement_counts" else game.get(field))
-	var rows: Array = []
-	var cells: Array = game.buildings.keys()
-	cells.sort()
-	for cell in cells:
-		if game.buildings[cell].kind == "teleporter" and game.buildings[cell].tunnel_pair == game.INVALID: continue
-		var row: Array = [cell]
-		for field in BUILD_FIELDS: row.append(game.buildings[cell].get(field))
-		rows.append(row)
-	var progress: Array = []
-	for field in TUTORIAL_FIELDS: progress.append(game.tutorial.get(field))
-	var gates: Array = []
-	for gate in game.spawners: gates.append([gate.waves_completed, gate.converted, gate.prepared_color])
-	var camera_position: Vector2 = game.capture_effect.camera_target() if is_instance_valid(game.capture_effect) and game.capture_effect.active else game.camera.position
-	var saved_zoom: Vector2 = Vector2.ONE if is_instance_valid(game.capture_effect) and game.capture_effect.active else Vector2.ONE * game.camera_zoom_target
-	return [VERSION, values, rows, progress, gates, game.scraps.duplicate(true), camera_position, saved_zoom, game.rng.state, game.wave_rng.state]
+	return SaveState.expand(game, SaveState.capture(game))
 func capture(checkpoint: Array = [], checkpoint_wave: int = -1) -> bool:
 	if pending_branch: return false
 	last_error = ""
@@ -145,7 +56,9 @@ func capture(checkpoint: Array = [], checkpoint_wave: int = -1) -> bool:
 	return true
 
 func write_snapshot(path: String, data: Array) -> bool:
-	var raw := var_to_bytes(data)
+	var saved := SaveState.from_legacy(game, data)
+	if saved.is_empty(): return false
+	var raw := var_to_bytes(saved)
 	var packed := PackedByteArray()
 	var mode := FileAccess.COMPRESSION_ZSTD
 	for candidate in [FileAccess.COMPRESSION_ZSTD, FileAccess.COMPRESSION_DEFLATE, FileAccess.COMPRESSION_GZIP]:
@@ -277,6 +190,7 @@ func read_snapshot(snapshot_path: String) -> Array:
 	var raw := file.get_buffer(file.get_length() - file.get_position()).decompress(size, mode)
 	if checksum(raw) != digest: return []
 	var data = bytes_to_var(raw)
+	if data is Dictionary: return SaveState.expand(game, data)
 	if not data is Array or data.size() != 10: return []
 	if data[0] == 1:
 		if data[1].size() != 21 or data[3].size() != 11: return []
@@ -379,17 +293,22 @@ func read_snapshot(snapshot_path: String) -> Array:
 				row[5] = health
 				if row[0] == data[1][9]: data[1][13] = row[4]
 		data[0] = 17
+	if data[0] == 17:
+		for row in data[2]: row.append({})
+		data[0] = 18
+	if data[0] == 18: data[0] = 19
 	if data[0] != VERSION: return []
 	if data[1].size() != FIELDS.size() or data[3].size() != TUTORIAL_FIELDS.size() or data[4].size() != game.spawners.size(): return []
 	for row in data[2]:
 		if not row is Array or row.size() != BUILD_FIELDS.size() + 1: return []
-		if not (row[1] == "core" or game.BUILDINGS.has(row[1])): return []
-	return data
+		if not (row[1] == "core" or game.BUILDINGS.has(row[1]) or game.Content.REMOVED_BUILDINGS.has(row[1])): return []
+	return SaveState.expand(game, SaveState.from_legacy(game, data))
 func restore(index: int) -> bool:
 	var data := load_snapshot(index)
 	return restore_snapshot(data, index)
 
 func restore_snapshot(data: Array, index: int) -> bool:
+	if not data.is_empty(): data = SaveState.expand(game, SaveState.from_legacy(game, data))
 	if data.is_empty():
 		last_error = "This save could not be read."
 		return false
@@ -398,11 +317,6 @@ func restore_snapshot(data: Array, index: int) -> bool:
 	game.cancel_final_wave_completion()
 	game.core_under_attack = false
 	if is_instance_valid(game.capture_effect): game.capture_effect.cancel()
-	var known_resources: Dictionary = game.discovered_resources.duplicate()
-	var learned: Dictionary = {}
-	for field in TUTORIAL_FIELDS:
-		var value = game.tutorial.get(field)
-		learned[field] = value.duplicate(true) if value is Dictionary else value
 	game.cancel_build_selection(false)
 	game.enemy_visual_offsets.clear()
 	game.buildings.clear()
@@ -412,7 +326,6 @@ func restore_snapshot(data: Array, index: int) -> bool:
 	game.discovered_resources.erase("scrap")
 	game.researched.erase("auto_scrap")
 	game.speed = game.SPEEDUP_MULTIPLIER if game.speed > 1 and game.researched.has("time_speed") else 1
-	game.discovered_resources.merge(known_resources, true)
 	game.placement_counts.clear()
 	for row in data[2]:
 		var cell: Vector2i = row[0]
@@ -429,17 +342,6 @@ func restore_snapshot(data: Array, index: int) -> bool:
 		if game.buildings[cell].kind == "belt": game.buildings[cell].pending = false
 		if game.buildings[cell].get("pending", false): game.has_pending_construction = true
 	for i in TUTORIAL_FIELDS.size(): game.tutorial.set(TUTORIAL_FIELDS[i], data[3][i])
-	# Learning belongs to the player, rather than to a checkpoint's world state.
-	for field in TUTORIAL_FIELDS:
-		if field in WORLD_TUTORIAL_FIELDS: continue
-		var previous = learned[field]
-		var restored = game.tutorial.get(field)
-		if previous is bool: game.tutorial.set(field, previous or restored)
-		elif previous is int or previous is float: game.tutorial.set(field, max(previous, restored))
-		elif previous is Dictionary:
-			var merged: Dictionary = restored.duplicate(true)
-			merged.merge(previous, true)
-			game.tutorial.set(field, merged)
 	for i in game.spawners.size():
 		var gate = game.spawners[i]
 		gate.waves_completed = data[4][i][0]

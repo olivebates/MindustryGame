@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" path="res://assets/terrain/copper.svg" id="1_edcrj"]
 [ext_resource type="Texture2D" path="res://assets/terrain/iron.svg" id="2_o6we0"]
-[ext_resource type="Texture2D" path="res://assets/terrain/verdite.svg" id="3_qm3m6"]
+[ext_resource type="Texture2D" path="res://assets/terrain/plutonium.svg" id="3_qm3m6"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_j1qab"]
 resource_name = "Copper"
@@ -19,7 +19,7 @@ texture_region_size = Vector2i(32, 32)
 0:0/0/custom_data_0 = "iron"
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_2ki0t"]
-resource_name = "Verdite"
+resource_name = "Plutonium"
 texture = ExtResource("3_qm3m6")
 texture_region_size = Vector2i(32, 32)
 0:0/0 = 0

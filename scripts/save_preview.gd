@@ -12,7 +12,7 @@ var ground_texture: Texture2D
 func configure(game: Node2D, snapshot: Array = []) -> void:
 	iron_barriers = game.researched.has("iron_barriers") if snapshot.is_empty() else snapshot[1][1].has("iron_barriers")
 	core = game.current_core if snapshot.is_empty() else snapshot[1][9]
-	conveyor_upgraded = game.researched.has("conveyor_speed") if snapshot.is_empty() else snapshot[1][1].has("conveyor_speed")
+	conveyor_upgraded = false
 	buildings = game.buildings.duplicate(true) if snapshot.is_empty() else {}
 	if not snapshot.is_empty():
 		for row in snapshot[2]:
@@ -24,6 +24,7 @@ func configure(game: Node2D, snapshot: Array = []) -> void:
 	forest_texture = preload("res://scripts/forest_terrain.gd").texture(64)
 	ground_texture = preload("res://scripts/ground_terrain.gd").texture(64)
 	for id in ["ground", "rock", "copper", "iron", "verdite"]: terrain[id] = preload("res://scripts/pixel_art.gd").texture(load("res://assets/terrain/%s.svg" % id), Vector2i(64, 64))
+	terrain.verdite = preload("res://scripts/pixel_art.gd").texture(load("res://assets/terrain/plutonium.svg"), Vector2i(64, 64))
 	for y in range(core.y - 20, core.y + 21):
 		for x in range(core.x - 20, core.x + 21):
 			var cell := Vector2i(x, y)
@@ -73,6 +74,7 @@ func _draw() -> void:
 		var center := Vector2(cell * 32) + Vector2.ONE * 16 * footprint
 		var texture: Texture2D = textures.belt_dark if b.kind == "belt" and not conveyor_upgraded else textures[b.kind]
 		if b.kind == "solar": texture = textures.solar_base
+		if preload("res://scripts/turret_art.gd").ACCENTS.has(b.kind): texture = preload("res://scripts/turret_art.gd").texture(texture, "solar_base" if b.kind == "solar" else b.kind, {"red":Color("f16e64"),"green":Color("83d780"),"blue":Color("7aa7f0")}[b.color])
 		if b.kind == "teleporter" and (b.tunnel_role == "exit" or (b.tunnel_role == "" and buildings.has(b.tunnel_pair) and buildings.keys().find(cell) > buildings.keys().find(b.tunnel_pair))):
 			texture = textures["teleporter_output_%d" % int(b.dir)]
 		if b.kind == "core" and cell != core: texture = textures.core_inactive
@@ -103,11 +105,11 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO)
 		if b.kind == "turret" and b.get("shield", false):
 			preload("res://scripts/drawing_style.gd").draw_shield(self, Rect2(center - Vector2.ONE * (dimension / 2 + 3), Vector2.ONE * (dimension + 6)), 1.0, line_width())
-		if b.kind in ["solar", "turret", "repeater", "cannon"]:
+		if b.kind in ["solar", "turret"]:
 			draw_rect(Rect2(Vector2(cell * 32) - Vector2.ONE, Vector2.ONE * (dimension + 2)), {"red": Color("f16e64"), "green": Color("83d780"), "blue": Color("7aa7f0")}[b.color], false, line_width())
 			draw_set_transform(center + Vector2(0, 2) if b.kind == "solar" else center, b.aim)
-			if b.kind == "solar": draw_texture_rect(textures.solar_gun, Rect2(-16, -16, 32, 32), false)
-			else: draw_texture_rect(textures.barrel, Rect2(-16, -16, 32, 32), false)
+			var part := "solar_gun" if b.kind == "solar" else "barrel"
+			draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures[part], part, {"red":Color("f16e64"),"green":Color("83d780"),"blue":Color("7aa7f0")}[b.color]), Rect2(-16, -16, 32, 32), false)
 			draw_set_transform(Vector2.ZERO)
 
 func line_width() -> float:

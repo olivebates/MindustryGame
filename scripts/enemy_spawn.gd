@@ -5,7 +5,7 @@ extends Node2D
 @export_range(1, 100) var waves_before_conversion: int = 4
 @export var turns_into_core := true
 ## Added to base building prices inside this core's range; 100 means double.
-@export var core_resource_price_increase: Dictionary[String, float] = {"copper": 0.0, "iron": 0.0, "verdite": 0.0, "alloy": 0.0, "pink": 0.0}
+@export var core_resource_price_increase: Dictionary[String, float] = {"copper": 0.0, "iron": 0.0, "verdite": 0.0, "pink": 0.0}
 @export var credits_per_wave: PackedInt32Array = PackedInt32Array([9, 28, 42, 60])
 @export_enum("red", "green", "blue") var possible_colors: PackedStringArray = PackedStringArray(["red", "green", "blue"])
 @export var wave_color_palettes: Array[PackedStringArray] = []
@@ -41,7 +41,7 @@ func _validate_property(property: Dictionary) -> void:
 		property.hint_string = "%d/%d:%s" % [TYPE_STRING, PROPERTY_HINT_ENUM, enemy_dropdown_choices()]
 	elif property.name == "core_resource_price_increase":
 		property.hint = PROPERTY_HINT_TYPE_STRING
-		property.hint_string = "%d/%d:copper,iron,verdite,alloy,pink;%d:" % [TYPE_STRING, PROPERTY_HINT_ENUM, TYPE_FLOAT]
+		property.hint_string = "%d/%d:copper,iron,verdite,pink;%d:" % [TYPE_STRING, PROPERTY_HINT_ENUM, TYPE_FLOAT]
 	elif property.name in ["wave_enemy_lists", "wave_color_palettes"]:
 		var choices := enemy_dropdown_choices() if property.name == "wave_enemy_lists" else "red,green,blue"
 		property.hint = PROPERTY_HINT_TYPE_STRING
