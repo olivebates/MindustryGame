@@ -4,6 +4,7 @@ const TILE := 32.0
 const TRAVEL_SECONDS := 1.0
 const SPEED := TILE / TRAVEL_SECONDS
 const ARROW_SPACING := TILE / 2.0
+const ARROW_PIXELS := 16
 const DIRECTIONS := [Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT, Vector2.UP]
 static var arrow_textures: Dictionary = {}
 
@@ -47,15 +48,17 @@ static func arrow_segments(direction: int, incoming: int, time: float) -> Array[
 			if line.size() == 2: result.append(line)
 	return result
 static func arrow_texture(direction: int, incoming: int, time: float, resolution: int = 64) -> Texture2D:
-	var density := float(resolution) / TILE
+	# Author motion and chevrons on the same two-world-unit grid as the shader.
+	# Upscaling whole cells prevents its samples from dropping thin moving lines.
+	var density := float(ARROW_PIXELS) / TILE
 	var phase := floori(arrow_phase(time) * density)
 	var key := Vector4i(direction, incoming, phase, resolution)
 	if arrow_textures.has(key): return arrow_textures[key]
-	var picture := Image.create(resolution, resolution, false, Image.FORMAT_RGBA8)
+	var picture := Image.create(ARROW_PIXELS, ARROW_PIXELS, false, Image.FORMAT_RGBA8)
 	picture.fill(Color.TRANSPARENT)
 	for segment in arrow_segments(direction, incoming, float(phase) / (SPEED * density)):
-		var first := Vector2i((segment[0] * density).round()) + Vector2i.ONE * (resolution / 2)
-		var last := Vector2i((segment[1] * density).round()) + Vector2i.ONE * (resolution / 2)
+		var first := Vector2i((segment[0] * density).round()) + Vector2i.ONE * (ARROW_PIXELS / 2)
+		var last := Vector2i((segment[1] * density).round()) + Vector2i.ONE * (ARROW_PIXELS / 2)
 		var delta := (last - first).abs()
 		var step := Vector2i(1 if first.x < last.x else -1, 1 if first.y < last.y else -1)
 		var error := delta.x - delta.y
@@ -63,7 +66,7 @@ static func arrow_texture(direction: int, incoming: int, time: float, resolution
 			for y in maxi(1, roundi(density)):
 				for x in maxi(1, roundi(density)):
 					var pixel := first + Vector2i(x, y)
-					if pixel.x >= 0 and pixel.y >= 0 and pixel.x < resolution and pixel.y < resolution: picture.set_pixel(pixel.x, pixel.y, Color("a69b88"))
+					if pixel.x >= 0 and pixel.y >= 0 and pixel.x < ARROW_PIXELS and pixel.y < ARROW_PIXELS: picture.set_pixel(pixel.x, pixel.y, Color("a69b88"))
 			if first == last: break
 			var twice := error * 2
 			if twice > -delta.y:
@@ -72,6 +75,7 @@ static func arrow_texture(direction: int, incoming: int, time: float, resolution
 			if twice < delta.x:
 				error += delta.x
 				first.y += step.y
+	if resolution != ARROW_PIXELS: picture.resize(resolution, resolution, Image.INTERPOLATE_NEAREST)
 	var baked := ImageTexture.create_from_image(picture)
 	arrow_textures[key] = baked
 	return baked

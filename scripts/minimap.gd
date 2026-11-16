@@ -47,6 +47,19 @@ func terrain_color(cell: Vector2i) -> Color:
 	return Color("287246") if game.rocks.has(cell) else Color("42332c")
 func map_point(cell: Vector2) -> Vector2:
 	return map_offset + (cell - bounds.position) * map_scale
+func draw_pixel_circle(center: Vector2, radius: float, color: Color, ring_width: float = 0.0) -> void:
+	# Rasterize on the terrain's one-cell-per-texel grid, including its offset.
+	var center_cell := (center - map_offset) / map_scale
+	var radius_cells := radius / map_scale
+	var inner := maxf(0.0, radius_cells - ring_width / map_scale) if ring_width > 0 else 0.0
+	var low := Vector2i((center_cell - Vector2.ONE * radius_cells).floor())
+	var high := Vector2i((center_cell + Vector2.ONE * radius_cells).ceil())
+	for y in range(low.y, high.y):
+		for x in range(low.x, high.x):
+			var distance := (Vector2(x, y) + Vector2(0.5, 0.5)).distance_to(center_cell)
+			if distance > radius_cells or distance < inner: continue
+			var rect := Rect2(map_offset + Vector2(x, y) * map_scale, Vector2.ONE * map_scale)
+			if Rect2(map_offset, bounds.size * map_scale).encloses(rect): draw_rect(rect, color)
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		dragging = event.pressed
@@ -81,7 +94,7 @@ func _draw() -> void:
 		draw_rect(Rect2(map_point(Vector2(cell)), tile * game.footprint_size(b.kind)), color)
 		if game.core_should_glow(cell):
 			var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.005)
-			draw_circle(map_point(Vector2(cell) + Vector2.ONE / 2), 4 + pulse * 3, Color(1, 0.85, 0.35, 0.25 + pulse * 0.4))
+			draw_pixel_circle(map_point(Vector2(cell) + Vector2.ONE / 2), 4 + pulse * 3, Color(1, 0.85, 0.35, 0.25 + pulse * 0.4))
 	for enemy in game.enemies:
 		if game.fog_disabled or revealed.has(Vector2i((enemy.pos / game.TILE).floor())): draw_circle(map_point(enemy.pos / game.TILE), 2, game.TEAM_COLORS[enemy.color])
 	for spawner in game.active_spawners:
@@ -89,7 +102,7 @@ func _draw() -> void:
 	var center: Vector2 = map_point(game.camera.position / game.TILE)
 	if is_instance_valid(game.capture_effect) and game.capture_effect.active:
 		var phase := fposmod(game.capture_effect.time, 0.9) / 0.9
-		draw_arc(map_point(game.capture_effect.origin / game.TILE), 5 + phase * 14, 0, TAU, 40, Color(1, 0.8, 0.4, 1 - phase), 2)
+		draw_pixel_circle(map_point(game.capture_effect.origin / game.TILE), 5 + phase * 14, Color(1, 0.8, 0.4, 1 - phase), map_scale)
 	var visible_size: Vector2 = get_viewport_rect().size / game.camera.zoom / game.TILE * map_scale
 	draw_rect(Rect2(center - visible_size / 2, visible_size), Color(0.93, 0.70, 0.51, 0.5), false, line_width())
 

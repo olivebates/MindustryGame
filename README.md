@@ -1,5 +1,11 @@
 # Emberworks - Frontier
 
+World artwork stays in SVG source files. The game caches 64-pixel-per-tile source
+textures in memory and uses a shader to sample a two-world-unit grid (16 cells
+per tile). Sprite origins and the rendered camera center snap to that same grid;
+sprite corners retain their shape. Zoom keeps the same source artwork. Exact
+texel sampling prevents filtering blends. UI icons retain 32-pixel textures.
+
 A native Godot factory-defense prototype with original SVG graphics, mining, conveyors, research, colored weapons, and an expanding frontier.
 
 Open `project.godot` in Godot 4.3 or newer and press **F5**, or run:

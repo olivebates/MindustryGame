@@ -6,6 +6,8 @@ const Nuclear = preload("res://scripts/nuclear.gd")
 const BUILDINGS = Content.BUILDINGS
 var TECH: Dictionary = Content.TECH.duplicate(true)
 const TILE := 32
+const SPRITE_PIXELS_PER_TILE := 16
+const WORLD_PIXEL_SIZE := float(TILE) / SPRITE_PIXELS_PER_TILE
 const ZOOM_LEVELS := [0.5, 1.0, 2.0]
 const SPEEDUP_MULTIPLIER := 5
 const WIDTH := 112
@@ -79,7 +81,7 @@ var terrain: Node2D
 var textures: Dictionary = {}
 var ui_textures: Dictionary = {}
 var sprite_raster_sets: Dictionary = {}
-var raster_tile_size := 16
+var raster_tile_size := 64
 var hud_timer := 0.0
 var radial_pending := INVALID
 var radial_kind := ""
@@ -113,7 +115,9 @@ var wave_warp_capacity_hit := false
 func _ready() -> void:
 	var sprite_material := ShaderMaterial.new()
 	sprite_material.shader = preload("res://scripts/crisp_sprite.gdshader")
+	sprite_material.set_shader_parameter("world_pixel_size", WORLD_PIXEL_SIZE)
 	material = sprite_material
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_add_color_tech()
 	saves = preload("res://scripts/wave_saves.gd").new(self)
 	rng.seed = 42017
@@ -129,7 +133,7 @@ func _ready() -> void:
 	cores.append(current_core)
 	wave_timer = initial_wave_delay
 	_init_spawners()
-	for resolution in [16, 32, 64]: sprite_rasters(resolution)
+	for resolution in [32, 64]: sprite_rasters(resolution)
 	ui_textures = sprite_rasters(32)
 	textures = sprite_rasters(raster_tile_size)
 	_load_level()
@@ -145,6 +149,7 @@ func _ready() -> void:
 	camera.position = cell_center(current_core) + Vector2(170, -35)
 	set_camera_zoom(ZOOM_LEVELS[2])
 	add_child(camera)
+	RenderingServer.frame_pre_draw.connect(_snap_camera_to_pixel_grid)
 	pause_grid = Node2D.new()
 	pause_grid.set_script(load("res://scripts/pause_grid.gd"))
 	pause_grid.game = self
@@ -1079,7 +1084,6 @@ func _process(delta: float) -> void:
 		camera.position = clamp_camera_position(camera.position)
 		if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_D): tutorial.record_wasd_movement(camera.position.distance_to(before_move))
 	camera.position = clamp_camera_position(camera.position)
-	camera.position = (camera.position * camera.zoom).round() / camera.zoom
 	hover_cell = Vector2i((get_global_mouse_position() / TILE).floor())
 	var drag_button := MOUSE_BUTTON_MIDDLE if middle_blueprint_drag else MOUSE_BUTTON_LEFT
 	if not Input.is_mouse_button_pressed(drag_button) and dragging: finish_drag()
@@ -1510,9 +1514,9 @@ func _draw() -> void:
 	for effect in demolitions:
 		var age: float = 1.0 - effect.life / 0.3
 		var dimension: float = effect.size * (1.0 - age * 0.65)
-		draw_set_transform(effect.pos + Vector2(0, age * 9), effect.dir * PI / 2.0 if effect.kind == "belt" else age * 0.12)
+		_draw_sprite_transform(effect.pos + Vector2(0, age * 9), effect.dir * PI / 2.0 if effect.kind == "belt" else age * 0.12)
 		draw_texture_rect(textures[effect.kind], Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false, Color(1, 1, 1, 1.0 - age))
-		draw_set_transform(Vector2.ZERO)
+		_draw_sprite_transform(Vector2.ZERO)
 		for piece in 10:
 			var axis := Vector2.from_angle(piece * TAU / 10.0)
 			var pos: Vector2 = effect.pos + axis * age * (16 + piece % 3 * 8) + Vector2(0, age * age * 14)
@@ -1524,7 +1528,7 @@ func _draw() -> void:
 		var target := output_target(cell, b)
 		var destination := origin if target == INVALID else cell_center(target)
 		if b.tunnel_role == "entry": destination = origin + Vector2(DIRS[b.dir]) * 10
-		var pos := origin.lerp(destination, b.travel)
+		var pos := snap_sprite_position(origin.lerp(destination, b.travel))
 		var alpha: float = 1.0 - b.travel * 0.75 if b.tunnel_role == "entry" else 1.0
 		draw_texture_rect(textures[b.item + "_item"], Rect2(pos - Vector2.ONE * 4, Vector2.ONE * 8), false, Color(1, 1, 1, alpha))
 	for enemy in enemies: _draw_enemy(enemy)
@@ -1535,7 +1539,7 @@ func _draw() -> void:
 	for shot in shots:
 		if shot.get("projectile", false):
 			var point: Vector2 = shot.from.lerp(shot.to, clampf(1.0 - shot.life / shot.duration, 0, 1))
-			draw_texture_rect(textures.iron_item, Rect2(point - Vector2(5, 5), Vector2(10, 10)), false)
+			draw_texture_rect(textures.iron_item, Rect2(snap_sprite_position(point) - Vector2(5, 5), Vector2(10, 10)), false)
 		else: draw_line(shot.from, shot.to, Color(shot.color, clampf(shot.life * 10, 0, 1)), line_width())
 	for particle in particles: draw_rect(Rect2(particle.pos, Vector2(3, 3)), Color(particle.color, minf(1, particle.life * 3)))
 	if not hud.is_pointer_over_ui(): _draw_cursor()
@@ -1565,9 +1569,9 @@ func _draw_cursor() -> void:
 			var texture: Texture2D = textures["tunnel_" + config.tunnel_role if config.kind == "belt" and config.tunnel_role != "" else config.kind]
 			if is_turret(config.kind): texture = preload("res://scripts/turret_art.gd").texture(texture, config.kind, TEAM_COLORS[config.color])
 			if config.kind == "teleporter" and config.tunnel_role == "exit": texture = textures["teleporter_output_%d" % int(config.dir)]
-			draw_set_transform(rect.get_center(), config.dir * PI / 2.0 if config.kind == "belt" else 0.0)
+			_draw_sprite_transform(rect.get_center(), config.dir * PI / 2.0 if config.kind == "belt" else 0.0)
 			draw_texture_rect(texture, Rect2(-rect.size / 2, rect.size), false, tint)
-			draw_set_transform(Vector2.ZERO)
+			_draw_sprite_transform(Vector2.ZERO)
 			draw_rect(rect, Color(tint, 0.75), false, line_width())
 			if is_turret(config.kind): draw_rect(rect.grow(line_width() / 2), Color(TEAM_COLORS[config.color], 0.65), false, line_width())
 		return
@@ -1590,11 +1594,11 @@ func _draw_cursor() -> void:
 		var color := TEAL if can_build(hover_cell, selected) else RED
 		var dim: float = TILE * footprint_size(selected)
 		var rect := Rect2(Vector2(hover_cell * TILE), Vector2.ONE * dim)
-		draw_set_transform(rect.get_center(), build_direction * PI / 2.0 if selected == "belt" else 0.0)
+		_draw_sprite_transform(rect.get_center(), build_direction * PI / 2.0 if selected == "belt" else 0.0)
 		var ghost_texture: Texture2D = textures.belt_dark if selected == "belt" else textures[selected]
 		if is_turret(selected): ghost_texture = preload("res://scripts/turret_art.gd").texture(ghost_texture, selected, TEAM_COLORS[build_color])
 		draw_texture_rect(ghost_texture, Rect2(-rect.size / 2, rect.size), false, Color(color, 0.45))
-		draw_set_transform(Vector2.ZERO)
+		_draw_sprite_transform(Vector2.ZERO)
 		draw_rect(rect, color, false, line_width())
 		if is_turret(selected): _draw_range(rect.get_center(), turret_range(selected), color)
 		elif BUILDINGS.get(selected, {}).has("square"):
@@ -1605,6 +1609,18 @@ func _draw_cursor() -> void:
 func _draw_range(origin: Vector2, radius: float, color: Color) -> void:
 	draw_circle(origin, radius, Color(color, 0.025))
 	draw_arc(origin, radius, 0, TAU, 80, Color(color, 0.25), line_width())
+func snap_sprite_position(point: Vector2) -> Vector2:
+	return point.snapped(Vector2.ONE * WORLD_PIXEL_SIZE)
+
+func _draw_sprite_transform(point: Vector2, angle: float = 0.0, sprite_scale: Vector2 = Vector2.ONE) -> void:
+	draw_set_transform(snap_sprite_position(point), angle, sprite_scale)
+
+func _snap_camera_to_pixel_grid() -> void:
+	if not is_instance_valid(camera) or not camera.is_inside_tree(): return
+	# Preserve movement precision; only the rendered camera center is snapped.
+	camera.offset = snap_sprite_position(camera.position) - camera.position
+	camera.force_update_scroll()
+
 func set_camera_zoom(value: float) -> void:
 	if is_instance_valid(camera_zoom_tween): camera_zoom_tween.kill()
 	var index := 0
@@ -1612,8 +1628,7 @@ func set_camera_zoom(value: float) -> void:
 		if absf(ZOOM_LEVELS[candidate] - value) < absf(ZOOM_LEVELS[index] - value): index = candidate
 	camera.zoom = Vector2.ONE * ZOOM_LEVELS[index]
 	camera_zoom_target = ZOOM_LEVELS[index]
-	camera.position = (camera.position * camera.zoom).round() / camera.zoom
-	var resolution: int = roundi(TILE * ZOOM_LEVELS[index])
+	var resolution := 64
 	if resolution != raster_tile_size:
 		raster_tile_size = resolution
 		textures = sprite_rasters(resolution)
@@ -1656,18 +1671,18 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 			texture = textures["belt_junction_%d%s" % [mask, "_dark"]]
 			angle = 0.0
 			flip = Vector2.ONE
-	draw_set_transform(p, angle, flip)
+	_draw_sprite_transform(p, angle, flip)
 	draw_texture_rect(texture, rect, false)
-	draw_set_transform(Vector2.ZERO)
+	_draw_sprite_transform(Vector2.ZERO)
 	if core_should_glow(cell):
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.005)
 		draw_texture_rect(texture, Rect2(p - Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false, Color(1.0, 0.85, 0.35, pulse * 0.5))
 		for ring in 3: draw_circle(p, dimension * 0.65 + ring * 4, Color(1.0, 0.83, 0.3, (0.05 + pulse * 0.07) / (ring + 1)))
 
 	if b.kind == "belt" and b.tunnel_role == "":
-		draw_set_transform(p)
+		_draw_sprite_transform(p)
 		draw_texture_rect(ConveyorMotion.arrow_texture(b.dir, b.input_dir, elapsed * conveyor_items_per_second("belt"), raster_tile_size), Rect2(-16, -16, 32, 32), false)
-		draw_set_transform(Vector2.ZERO)
+		_draw_sprite_transform(Vector2.ZERO)
 	elif b.kind == "refinery":
 		draw_arc(p, dimension * 0.37, -PI / 2, -PI / 2 + TAU, 64, Color(1, 1, 1, 0.08), line_width() * 2)
 		if b.progress > 0: draw_arc(p, dimension * 0.37, -PI / 2, -PI / 2 + TAU * b.progress / 10.0, 64, Color(1, 1, 1, 0.48), line_width() * 2)
@@ -1692,10 +1707,10 @@ func _draw_building(cell: Vector2i, b: Dictionary) -> void:
 		if b.kind == "turret":
 			var loading: float = clampf(b.progress / BUILDINGS.turret.reload, 0, 1)
 			gun_position -= Vector2.from_angle(b.aim) * (pow(loading, 3) * 4 + b.flash * 6)
-		draw_set_transform(gun_position.round(), b.aim)
+		_draw_sprite_transform(gun_position.round(), b.aim)
 		if b.kind == "solar": draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures.solar_gun, "solar_gun", TEAM_COLORS[b.color]), Rect2(-16, -16, 32, 32), false)
 		else: draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures.barrel, "barrel", TEAM_COLORS[b.color]), Rect2(-16, -16, 32, 32), false)
-		draw_set_transform(Vector2.ZERO)
+		_draw_sprite_transform(Vector2.ZERO)
 		if b.kind == "turret" and b.progress > 0:
 			var charge: float = clampf(b.progress / BUILDINGS.turret.reload, 0, 1)
 			var axis := Vector2.from_angle(b.aim)
@@ -1750,15 +1765,15 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var hop := absf(stride) * moving * (1.7 if enemy.kind == "scout" else (0.8 if enemy.kind in ["runner", "skirmisher"] else 0.0))
 	var body_position := (p + Vector2(0, -hop)).round()
 	var sway := stride * moving * (0.028 if enemy.kind in ["heavy", "bulwark", "siege", "mender"] else 0.012)
-	draw_set_transform(p + Vector2(1, dimension * 0.10), enemy.angle, Vector2(1.0, 0.66))
+	_draw_sprite_transform(p + Vector2(1, dimension * 0.10), enemy.angle, Vector2(1.0, 0.66))
 	draw_circle(Vector2.ZERO, dimension * 0.33, Color(0.025, 0.045, 0.05, 0.3))
-	draw_set_transform(body_position, enemy.angle + sway, Vector2(1.0 + moving * stride * 0.012, 1.0 + breathing - moving * stride * 0.018))
+	_draw_sprite_transform(body_position, enemy.angle + sway, Vector2(1.0 + moving * stride * 0.012, 1.0 + breathing - moving * stride * 0.018))
 	draw_texture_rect(textures[enemy.kind + "_body_" + enemy.color], Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false)
 	var aim: float = enemy.get("aim", enemy.angle)
 	var recoil: float = enemy.get("recoil", 0.0)
-	draw_set_transform((body_position - Vector2.from_angle(aim) * recoil * (4.0 if enemy.kind == "siege" else (3.0 if enemy.kind == "bulwark" else 1.5))).round(), aim + sway * 0.35)
+	_draw_sprite_transform((body_position - Vector2.from_angle(aim) * recoil * (4.0 if enemy.kind == "siege" else (3.0 if enemy.kind == "bulwark" else 1.5))).round(), aim + sway * 0.35)
 	draw_texture_rect(textures[enemy.kind + "_gun_" + enemy.color], Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension), false)
-	draw_set_transform(Vector2.ZERO)
+	_draw_sprite_transform(Vector2.ZERO)
 	if enemy.kind in ["bulwark", "siege"] and enemy.get("charge", 0.0) > 0:
 		var charge: float = enemy.charge
 		var muzzle := (p + Vector2.from_angle(aim) * dimension * 0.4).round()
@@ -2281,14 +2296,14 @@ func draw_pending_building(cell: Vector2i, building: Dictionary) -> void:
 	if building.kind == "teleporter" and teleporters.is_output(cell): texture = textures["teleporter_output_%d" % int(building.dir)]
 	if building.kind == "belt": texture = textures.belt_dark
 	if building.kind == "belt" and building.get("tunnel_role", "") != "": texture = textures["tunnel_" + building.tunnel_role]
-	draw_set_transform(center, building.dir * PI / 2.0 if building.kind == "belt" else 0.0)
+	_draw_sprite_transform(center, building.dir * PI / 2.0 if building.kind == "belt" else 0.0)
 	preload("res://scripts/drawing_style.gd").draw_construction(self, texture, Rect2(-Vector2.ONE * dimension / 2, Vector2.ONE * dimension))
-	draw_set_transform(Vector2.ZERO)
+	_draw_sprite_transform(Vector2.ZERO)
 	if is_turret(building.kind):
-		draw_set_transform(center, building.aim)
+		_draw_sprite_transform(center, building.aim)
 		var part := "solar_gun" if building.kind == "solar" else "barrel"
 		draw_texture_rect(preload("res://scripts/turret_art.gd").texture(textures[part], part, TEAM_COLORS[building.color]), Rect2(-16, -16, 32, 32), false, Color(1, 1, 1, 0.33))
-		draw_set_transform(Vector2.ZERO)
+		_draw_sprite_transform(Vector2.ZERO)
 
 func handle_savestate_shortcut(event: InputEvent) -> bool:
 	if not event is InputEventKey or not event.pressed or event.echo: return false

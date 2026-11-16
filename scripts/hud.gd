@@ -231,7 +231,7 @@ func _ready() -> void:
 	apply_graphics_style(info_root)
 	refresh()
 func apply_graphics_style(node: Node) -> void:
-	if node == ghost_cost or node is Label or node is RichTextLabel or node is TextureRect:
+	if node == ghost_cost or node == minimap or node is Label or node is RichTextLabel:
 		node.material = null
 		node.use_parent_material = false
 	elif node is CanvasItem and node.material == null:
@@ -324,11 +324,30 @@ func animate_button(target: Button) -> void:
 	var motion := target.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	motion.tween_property(target, "position:y", origin.y + offset, 0.09)
 	target.set_meta("motion_tween", motion)
+var icon_materials: Dictionary = {}
+func icon_material(cells: int = 16) -> ShaderMaterial:
+	if not icon_materials.has(cells):
+		var shader_material := ShaderMaterial.new()
+		shader_material.shader = preload("res://scripts/gui_icon.gdshader")
+		shader_material.set_shader_parameter("pixel_cells", Vector2.ONE * cells)
+		icon_materials[cells] = shader_material
+	return icon_materials[cells]
+
 func icon(parent: Control, texture: Texture2D, pos: Vector2, dimensions: Vector2) -> TextureRect:
 	var result := TextureRect.new()
+	var source: String = texture.get_meta("source_path", texture.resource_path)
+	var kind := source.get_file().get_basename()
+	var cells := 16
+	if source.contains("/buildings/") and game.BUILDINGS.has(kind):
+		cells *= game.footprint_size(kind)
+		texture = game.textures.get(kind, texture)
+	else:
+		texture = preload("res://scripts/pixel_art.gd").texture(texture, Vector2i.ONE * 32)
+	result.material = icon_material(cells)
+	result.use_parent_material = false
 	result.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	result.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	result.texture = preload("res://scripts/pixel_art.gd").texture(texture, Vector2i.ONE * 32)
+	result.texture = texture
 	result.position = pos
 	result.size = dimensions
 	result.pivot_offset = dimensions / 2
@@ -1400,10 +1419,17 @@ func set_button_icon(target: Button, id: String) -> void:
 	if target.get_meta("icon_id", "") == id: return
 	if not button_icon_cache.has(id): button_icon_cache[id] = preload("res://scripts/pixel_art.gd").texture(load("res://assets/ui/%s.svg" % id), Vector2i(32, 32))
 	target.set_meta("icon_id", id)
-	target.icon = button_icon_cache[id]
-	target.expand_icon = true
-	target.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	target.add_theme_constant_override("icon_max_width", 28)
+	target.icon = null
+	var sprite := target.get_node_or_null("ActionIcon") as TextureRect
+	if sprite == null:
+		sprite = icon(target, button_icon_cache[id], Vector2.ZERO, Vector2(32, 32))
+		sprite.name = "ActionIcon"
+		sprite.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+		sprite.offset_left = -16
+		sprite.offset_top = -16
+		sprite.offset_right = 16
+		sprite.offset_bottom = 16
+	sprite.texture = button_icon_cache[id]
 
 
 func tech_stat_summary(id: String) -> String:

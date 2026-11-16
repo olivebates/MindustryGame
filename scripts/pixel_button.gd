@@ -20,6 +20,8 @@ func _ready() -> void:
 func _draw() -> void:
 	if is_instance_valid(caption): sync_caption()
 func sync_caption() -> void:
+	var action_icon := get_node_or_null("ActionIcon") as TextureRect
+	if action_icon != null: action_icon.modulate.a = 0.4 if disabled else 1.0
 	if caption.text != text: caption.text = text
 	caption.visible = text != ""
 	var font := get_theme_font("font")

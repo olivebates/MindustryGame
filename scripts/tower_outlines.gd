@@ -3,6 +3,8 @@ var game: Node2D
 var hint_clock := 0.0
 var supply_materials: Array[String] = []
 const PINK := Color("f48bc7")
+func _ready() -> void:
+	material = game.material
 func _process(dt: float) -> void:
 	hint_clock -= dt
 	if hint_clock <= 0:
@@ -56,26 +58,32 @@ func missing_ammo(b: Dictionary) -> String:
 	if data.get("ammo_free", false) or b.get("ammo", 0) > 0: return ""
 	return data.get("ammo", "")
 func socket(point: Vector2, filled: bool, pulse: float, width: float) -> void:
-	var radius := 4.0
-	var diamond := PackedVector2Array([point + Vector2(0, -radius), point + Vector2(radius, 0), point + Vector2(0, radius), point + Vector2(-radius, 0)])
-	draw_colored_polygon(diamond, PINK if filled else Color("251521"))
-	var border := diamond.duplicate()
-	border.append(diamond[0])
-	draw_polyline(border, PINK if filled else Color("a76b92"), width * 2)
-	if filled:
-		draw_circle(point, 1.5, Color("fff0fa"))
-		if pulse > 0:
-			draw_arc(point, 6 + (1 - pulse) * 5, 0, TAU, 24, Color(PINK, pulse * 0.8), width * 2)
+	var origin: Vector2 = game.snap_sprite_position(point)
+	for y in range(-2, 3):
+		for x in range(-2, 3):
+			var distance := absi(x) + absi(y)
+			if distance > 2: continue
+			var color := PINK if filled else Color("251521")
+			if distance == 2: color = PINK.lightened(pulse * 0.4) if filled else Color("a76b92")
+			if filled and distance == 0: color = Color("fff0fa")
+			draw_rect(Rect2(origin + Vector2(x, y) * width, Vector2.ONE * width), color)
+func pixel_outline(area: Rect2, color: Color, width: float) -> void:
+	# Filled strips occupy exactly one shader cell; centered strokes would
+	# straddle two cells and produce uneven thickness.
+	draw_rect(Rect2(area.position, Vector2(area.size.x, width)), color)
+	draw_rect(Rect2(area.position + Vector2(0, area.size.y - width), Vector2(area.size.x, width)), color)
+	draw_rect(Rect2(area.position + Vector2(0, width), Vector2(width, area.size.y - 2 * width)), color)
+	draw_rect(Rect2(area.position + Vector2(area.size.x - width, width), Vector2(width, area.size.y - 2 * width)), color)
 func _draw() -> void:
-	var width := 1.0 / get_screen_transform().x.length()
+	var width: float = game.WORLD_PIXEL_SIZE
 	for cell in game.buildings:
 		var b: Dictionary = game.buildings[cell]
 		if b.get("pending", false): continue
 		if not game.is_cell_visible(cell): continue
 		var center: Vector2 = game.building_center(cell)
 		var half_size: float = game.TILE * game.footprint_size(b.kind) / 2.0
-		var area := Rect2(Vector2(cell * game.TILE) - Vector2.ONE * width / 2, Vector2.ONE * (game.TILE * game.footprint_size(b.kind) + width))
-		if game.is_turret(b.kind): draw_rect(area, game.TEAM_COLORS[b.color], false, width)
+		var area := Rect2(Vector2(cell * game.TILE), Vector2.ONE * game.TILE * game.footprint_size(b.kind)).grow(width)
+		if game.is_turret(b.kind): pixel_outline(area, game.TEAM_COLORS[b.color], width)
 		var boosted: bool = game.is_turret(b.kind) and b.get("booster_count", 0) > 0
 		var firing: float = clampf(float(b.get("booster_fire_remaining", 0)) / 0.12, 0, 1)
 		var pulse := maxf(firing, 0.12 + 0.08 * sin(Time.get_ticks_msec() * 0.004)) if boosted else 0.0
@@ -89,4 +97,4 @@ func _draw() -> void:
 			var material: String = needed[int(Time.get_ticks_msec() / 900) % needed.size()]
 			var color: Color = game.RESOURCE_COLORS.get(material, Color("d1b6a0"))
 			color.a = 0.55 + 0.25 * sin(Time.get_ticks_msec() * 0.007)
-			draw_rect(area.grow(2), color, false, width * 2)
+			pixel_outline(area.grow(width), color, width)

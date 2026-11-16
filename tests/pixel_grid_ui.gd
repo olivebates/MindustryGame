@@ -30,7 +30,7 @@ func run() -> void:
 	check(binary_alpha(game.textures.solar.get_image()) and binary_alpha(game.textures.turret.get_image()), "Building sprite edges have no partial coverage")
 	var motion = load("res://scripts/conveyor_motion.gd")
 	var first: Texture2D = motion.arrow_texture(0, 0, 0.001)
-	check(first == motion.arrow_texture(0, 0, 0.01) and first != motion.arrow_texture(0, 0, 0.02), "Arrows remain stable until moving a complete native pixel")
+	check(first == motion.arrow_texture(0, 0, 0.01) and first != motion.arrow_texture(0, 0, 0.063), "Arrows remain stable until moving a complete shader pixel")
 	check(first == motion.arrow_texture(0, 0, 0.001 + motion.ARROW_SPACING / motion.SPEED), "Pixel arrow animation loops without a seam")
 	var crisp := true
 	for direction in 4:
@@ -43,10 +43,10 @@ func run() -> void:
 	for zoom in game.ZOOM_LEVELS:
 		game.set_camera_zoom(zoom)
 		check(is_equal_approx(game.camera.zoom.x, zoom), "Zoom selects an exact preset: " + str(zoom))
-	game.material.set_shader_parameter("screen_pixel_size", 2.0)
 	game.set_camera_zoom(0.5)
 	game.set_camera_zoom(2.0)
-	check(game.material.get_shader_parameter("screen_pixel_size") == 2.0, "The screen pixel grid remains constant across camera zoom changes")
+	game._snap_camera_to_pixel_grid()
+	check(game.material is ShaderMaterial and game.material.get_shader_parameter("world_pixel_size") == 2.0, "The shader retains a fixed world-space grid at every zoom")
 	check(game.hud.next_button.caption.material == null and game.hud.next_button.material == game.material and game.hud.tutorial_prompt.material == null and game.hud.tutorial_prompt.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR, "Text controls bypass the sprite shader and sample fonts at full resolution")
 	check(game.tutorial.drag_label.material == null and not game.tutorial.drag_label.use_parent_material, "World tutorial labels render separately from pixelated ghost sprites")
 	game.hud.refresh()
